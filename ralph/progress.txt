@@ -33,10 +33,11 @@ Core Features (Docker Operations)
     Commit: 5a94f3d
     Notes: All lifecycle operations implemented
 
-[ ] US-005: Basic TUI layout and rendering
+[X] US-005: Basic TUI layout and rendering
     Dependencies: US-001
-    Status: Not started
-    Notes:
+    Status: Complete
+    Commit: 56e399e
+    Notes: Terminal UI with event loop, sidebar, and help overlay
 
 [ ] US-006: Container list widget
     Dependencies: US-004, US-005
@@ -148,14 +149,23 @@ Release
 
 === Stats ===
 Total Stories: 25
-Completed: 4
+Completed: 5
 In Progress: 0
-Remaining: 21
+Remaining: 20
 
-Progress: [██░░░░░░░░] 16%
+Progress: [██░░░░░░░░] 20%
 
 === Recent Activity ===
 (Most recent first)
+
+- 2024-01-28: US-005 Complete - Basic TUI layout implemented
+  Commit: 56e399e feat(ui): implement basic TUI layout and event loop
+  - Terminal setup with alternate screen and mouse
+  - Event loop with 250ms tick rate
+  - Header, sidebar, main panel, footer layout
+  - Tab navigation with keyboard (1-6)
+  - Help overlay modal
+  - 34 tests passing
 
 - 2024-01-28: US-004 Complete - Container operations implemented
   Commit: 5a94f3d feat(docker): implement container list and lifecycle operations

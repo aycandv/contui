@@ -92,8 +92,8 @@
         "Manual test: application runs and displays layout"
       ],
       "priority": 5,
-      "passes": false,
-      "notes": "First UI story"
+      "passes": true,
+      "notes": "Complete - TUI with event loop, layout, and navigation"
     },
     {
       "id": "US-006",
