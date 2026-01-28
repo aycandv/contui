@@ -39,10 +39,11 @@ Core Features (Docker Operations)
     Commit: 56e399e
     Notes: Terminal UI with event loop, sidebar, and help overlay
 
-[ ] US-006: Container list widget
+[X] US-006: Container list widget
     Dependencies: US-004, US-005
-    Status: Not started
-    Notes:
+    Status: Complete
+    Commit: d425092
+    Notes: Table view with ID, Name, Image, Status, Ports columns
 
 [ ] US-007: Container detail panel
     Dependencies: US-006
@@ -149,14 +150,22 @@ Release
 
 === Stats ===
 Total Stories: 25
-Completed: 5
+Completed: 6
 In Progress: 0
-Remaining: 20
+Remaining: 19
 
-Progress: [██░░░░░░░░] 20%
+Progress: [██▌░░░░░░░] 24%
 
 === Recent Activity ===
 (Most recent first)
+
+- 2024-01-28: US-006 Complete - Container list widget
+  Commit: d425092 feat(ui): add container list widget with table view
+  - Table with ID, NAME, IMAGE, STATUS, PORTS columns
+  - Selection highlighting with ▶ symbol
+  - Status colors (green/yellow/red)
+  - ↑/↓ or j/k navigation for containers
+  - 39 tests passing
 
 - 2024-01-28: US-005 Complete - Basic TUI layout implemented
   Commit: 56e399e feat(ui): implement basic TUI layout and event loop
@@ -165,7 +174,6 @@ Progress: [██░░░░░░░░] 20%
   - Header, sidebar, main panel, footer layout
   - Tab navigation with keyboard (1-6)
   - Help overlay modal
-  - 34 tests passing
 
 - 2024-01-28: US-004 Complete - Container operations implemented
   Commit: 5a94f3d feat(docker): implement container list and lifecycle operations
