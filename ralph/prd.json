@@ -1,6 +1,6 @@
 {
   "project": "DockMon",
-  "branchName": "ralph/US-011-realtime-logs",
+  "branchName": "ralph/US-011-log-streaming",
   "description": "Advanced Docker TUI in Rust - Real-time container monitoring, log aggregation, and Docker Compose management",
   "userStories": [
     {
@@ -178,21 +178,22 @@
       "acceptanceCriteria": [
         "Implement list_volumes() in docker/volumes.rs returning Vec<VolumeSummary>",
         "Implement list_networks() in docker/networks.rs returning Vec<NetworkSummary>",
-        "Create VolumeList widget with columns: Name, Driver, Size, Mountpoint",
-        "Create NetworkList widget with columns: Name, Driver, Scope, Subnet",
+        "Create VolumeList widget with columns: Name, Driver, Scope, Mountpoint",
+        "Create NetworkList widget with columns: Name, Driver, Scope, Containers",
         "Display volume list in Volumes tab with selection and navigation",
         "Display network list in Networks tab with selection and navigation",
         "Implement 'd' key to remove selected volume/network with confirmation",
         "Implement 'p' key to prune unused volumes/networks with confirmation",
         "Show volume/network count in header",
-        "Distinguish unused volumes visually",
+        "Distinguish unused volumes visually (yellow)",
+        "Distinguish system networks visually (cyan for bridge/host/none)",
         "Auto-refresh every 2 seconds",
         "Typecheck passes",
         "Tests pass"
       ],
       "priority": 10,
-      "passes": false,
-      "notes": "Volume and Network list widgets with delete/prune operations"
+      "passes": true,
+      "notes": "Complete - Volume and Network list widgets with delete/prune operations, visual distinctions, 47 tests passing"
     },
     {
       "id": "US-011",

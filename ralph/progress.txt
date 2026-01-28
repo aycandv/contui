@@ -74,15 +74,17 @@ Core Features (Docker Operations)
       - Human-readable size formatting, relative time display
       - Auto-refresh every 2 seconds, 45 tests passing
 
-[ ] US-010: Volume and Network management
+[X] US-010: Volume and Network management
     Dependencies: US-003, US-005
-    Status: In Progress
-    Branch: ralph/US-010-volumes-networks
+    Status: Complete
+    Commit: 288f875
     Notes: Volume and Network list widgets:
-      - VolumeList: Name, Driver, Size, Mountpoint columns
-      - NetworkList: Name, Driver, Scope, Subnet columns
+      - VolumeList: Name, Driver, Scope, Mountpoint columns
+      - NetworkList: Name, Driver, Scope, Containers columns
       - 'd' delete, 'p' prune operations with confirmation
-      - Selection, navigation, auto-refresh every 2s
+      - Unused volumes shown in yellow
+      - System networks (bridge/host/none) in cyan
+      - Auto-refresh every 2s, 47 tests passing
 
 Advanced Features (Logs & Monitoring)
 --------------------------------------
@@ -177,6 +179,14 @@ Progress: [███▌░░░░░░] 36%
 
 === Recent Activity ===
 (Most recent first)
+
+- 2024-01-28: US-010 Complete - Volume and Network management
+  Commit: 288f875 feat(US-010): implement volume and network management
+  - VolumeList: Name, Driver, Scope, Mountpoint columns
+  - NetworkList: Name, Driver, Scope, Containers columns
+  - 'd' delete, 'p' prune operations with confirmation dialogs
+  - Unused volumes in yellow, system networks in cyan
+  - 47 tests passing
 
 - 2024-01-28: US-009 Complete - Image list and management
   Commit: 1b903c6 feat(US-009): implement image list and management
