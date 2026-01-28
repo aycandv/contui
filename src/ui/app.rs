@@ -521,11 +521,13 @@ impl UiApp {
         }
 
         // Render log viewer if active (on top of everything)
-        if let Some(ref log_view) = self.state.log_view {
-            crate::ui::components::log_viewer::render_log_viewer(frame, area, log_view);
-        } else {
-            // Debug: check if we should be showing logs
-            // eprintln!("DEBUG: log_view is None, not rendering log viewer");
+        // TEMPORARILY DISABLED FOR DEBUGGING - testing if this is the freeze source
+        if let Some(ref _log_view) = self.state.log_view {
+            // crate::ui::components::log_viewer::render_log_viewer(frame, area, log_view);
+            // Just draw a simple placeholder instead
+            let placeholder = ratatui::widgets::Paragraph::new("Log view active - press 'q' to close")
+                .style(ratatui::style::Style::default().fg(ratatui::style::Color::Yellow));
+            frame.render_widget(placeholder, area);
         }
 
         // Render confirmation dialog if active
