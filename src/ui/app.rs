@@ -10,7 +10,7 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 use ratatui::Frame;
 use tracing::{debug, info};
 
-use crate::core::{ConfirmAction, ContainerState, NotificationLevel, Tab, UiAction};
+use crate::core::{ConfirmAction, ContainerState, Tab, UiAction};
 use crate::state::AppState;
 use crate::ui::components::ContainerListWidget;
 
@@ -49,6 +49,13 @@ impl UiApp {
             return UiAction::None;
         }
 
+        // Always allow immediate quit
+        if key.code == KeyCode::Char('c') && key.modifiers == KeyModifiers::CONTROL {
+            info!("Ctrl+C pressed");
+            self.should_quit = true;
+            return UiAction::Quit;
+        }
+
         // If confirmation dialog is showing
         if self.state.confirm_dialog.is_some() {
             return self.handle_confirmation_key(key);
@@ -70,11 +77,6 @@ impl UiApp {
             // Quit
             KeyCode::Char('q') if key.modifiers.is_empty() => {
                 info!("Quit key pressed");
-                self.should_quit = true;
-                UiAction::Quit
-            }
-            KeyCode::Char('c') if key.modifiers == KeyModifiers::CONTROL => {
-                info!("Ctrl+C pressed");
                 self.should_quit = true;
                 UiAction::Quit
             }
@@ -355,11 +357,7 @@ impl UiApp {
     fn handle_logs_action(&mut self) -> UiAction {
         if let Some(container) = self.state.containers.get(self.state.container_list_selected) {
             let id = container.id.clone();
-            let name = container.names.first().cloned().unwrap_or_else(|| container.short_id.clone());
-            
-            // Show notification that we're loading logs
-            self.state.add_notification(format!("Loading logs for {}...", name), NotificationLevel::Info);
-            
+
             // Return action to start log streaming (log view will be opened in handle_ui_action)
             UiAction::ShowContainerLogs(id)
         } else {

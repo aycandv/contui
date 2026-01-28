@@ -25,6 +25,8 @@ pub struct App {
     docker_client: Option<DockerClient>,
     /// Channel receiver for log fetch results
     log_fetch_rx: Option<mpsc::Receiver<DockMonResult<Vec<LogEntry>>>>,
+    /// Last time we auto-fetched logs (for follow mode)
+    last_log_fetch: Option<std::time::Instant>,
 }
 
 impl App {
@@ -52,6 +54,7 @@ impl App {
             state,
             docker_client,
             log_fetch_rx: None,
+            last_log_fetch: None,
         })
     }
 
@@ -113,32 +116,12 @@ impl App {
                 // Create a mutable UI app for handling events
                 let mut ui_app = UiApp::new(self.state.clone());
                 let action = ui_app.handle_event(event);
-                
-                // Check if should quit before we move ui_app
+
+                // Apply UI-driven state changes first (navigation, dialogs, log view close/scroll, etc.)
+                // and then execute the requested action.
                 should_quit = ui_app.should_quit;
-                
-                // Handle the action FIRST (this may modify self.state.containers and self.state.notifications)
+                self.state = ui_app.state;
                 self.handle_ui_action(action).await;
-                
-                // Then sync UI state changes (confirm_dialog, show_help, etc.) to self.state
-                // We need to preserve: containers, notifications (from action handler)
-                // We need to sync from UI: confirm_dialog, show_help, current_tab, log_view, etc.
-                let mut ui_state = ui_app.state;
-                
-                // Preserve data that action handler may have updated
-                ui_state.containers = self.state.containers.clone();
-                ui_state.notifications = self.state.notifications.clone();
-                ui_state.docker_connected = self.state.docker_connected;
-                ui_state.connection_info = self.state.connection_info.clone();
-                ui_state.images = self.state.images.clone();
-                ui_state.volumes = self.state.volumes.clone();
-                ui_state.networks = self.state.networks.clone();
-                
-                // Sync log_view and test flag: prefer App's state (which may have been updated by action handler)
-                ui_state.log_view = self.state.log_view.clone();
-                ui_state.test_log_view_flag = self.state.test_log_view_flag;
-                
-                self.state = ui_state;
 
                 // Check if should quit
                 if should_quit {
@@ -151,6 +134,20 @@ impl App {
             if last_tick.elapsed() >= tick_rate {
                 // Check for completed log fetches
                 self.check_log_fetch().await;
+                
+                // Auto-refresh logs when in follow mode (every 2 seconds)
+                if let Some(ref log_view) = self.state.log_view {
+                    if log_view.follow && self.log_fetch_rx.is_none() {
+                        let should_fetch = self.last_log_fetch
+                            .map(|t| t.elapsed() >= Duration::from_secs(2))
+                            .unwrap_or(true);
+                        if should_fetch {
+                            let id = log_view.container_id.clone();
+                            self.start_log_streaming(id);
+                            self.last_log_fetch = Some(std::time::Instant::now());
+                        }
+                    }
+                }
                 
                 // Refresh data periodically (every 2 seconds)
                 if last_data_refresh.elapsed() >= data_refresh_rate {
@@ -195,18 +192,33 @@ impl App {
                 self.remove_container(&id).await;
             }
             UiAction::ShowContainerLogs(id) => {
-                // Open log view if not already open
-                if self.state.log_view.is_none() {
-                    if let Some(container) = self.state.containers.get(self.state.container_list_selected) {
-                        let name = container.names.first().cloned().unwrap_or_else(|| container.short_id.clone());
-                        self.state.open_log_view(id.clone(), name);
-                        self.state.add_notification("Press 'r' to load logs", NotificationLevel::Info);
-                    }
-                } else {
-                    // Log view is already open, user pressed 'r' to refresh
-                    self.state.add_notification("Loading logs...", NotificationLevel::Info);
-                    self.start_log_streaming(id);
+                let name = self
+                    .state
+                    .containers
+                    .iter()
+                    .find(|c| c.id == id)
+                    .and_then(|c| c.names.first())
+                    .cloned()
+                    .unwrap_or_else(|| id.chars().take(12).collect::<String>());
+
+                let needs_open = self
+                    .state
+                    .log_view
+                    .as_ref()
+                    .map(|lv| lv.container_id != id)
+                    .unwrap_or(true);
+
+                if needs_open {
+                    self.state.open_log_view(id.clone(), name);
+                } else if let Some(lv) = &mut self.state.log_view {
+                    lv.logs.clear();
+                    lv.scroll_offset = 0;
+                    lv.follow = true;
                 }
+
+                self.state.add_notification("Loading logs...", NotificationLevel::Info);
+                self.start_log_streaming(id);
+                self.last_log_fetch = Some(std::time::Instant::now());
             }
             UiAction::RemoveImage(id) => {
                 self.remove_image(&id).await;
