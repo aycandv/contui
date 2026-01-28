@@ -536,21 +536,16 @@ impl App {
             info!("Starting log fetch for container '{}'", container_id);
             self.state.add_notification("Fetching logs...", NotificationLevel::Info);
             
-            // Clone for the blocking task
+            // Clone for the async task
             let client = client.clone();
             let container_id_clone = container_id.clone();
             
-            // Spawn in blocking thread to fully isolate from async runtime
-            let handle = tokio::task::spawn_blocking(move || {
-                // Create a new runtime for this blocking thread
-                let rt = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                    .map_err(|e| crate::core::DockMonError::Other(format!("Failed to create runtime: {}", e)))?;
-                
-                rt.block_on(async move {
-                    client.fetch_logs(&container_id_clone, 100).await
-                })
+            // Spawn async task with overall timeout
+            let handle = tokio::spawn(async move {
+                tokio::time::timeout(
+                    std::time::Duration::from_secs(5),
+                    client.fetch_logs(&container_id_clone, 100)
+                ).await.map_err(|_| crate::core::DockMonError::Other("Log fetch timeout".to_string()))?
             });
             
             self.pending_log_fetch = Some((container_id, handle));
