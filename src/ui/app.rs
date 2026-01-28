@@ -82,25 +82,9 @@ impl UiApp {
             KeyCode::Char('5') => { self.switch_tab(Tab::Compose); UiAction::None }
             KeyCode::Char('6') => { self.switch_tab(Tab::System); UiAction::None }
 
-            // Tab switching with arrow keys (or container nav when on Containers tab)
+            // Tab switching with arrow keys
             KeyCode::Right => { self.next_tab(); UiAction::None }
             KeyCode::Left => { self.previous_tab(); UiAction::None }
-            KeyCode::Down => {
-                if self.state.current_tab == Tab::Containers {
-                    self.state.next_container();
-                } else {
-                    self.next_tab();
-                }
-                UiAction::None
-            }
-            KeyCode::Up => {
-                if self.state.current_tab == Tab::Containers {
-                    self.state.previous_container();
-                } else {
-                    self.previous_tab();
-                }
-                UiAction::None
-            }
 
             // Navigation between panels
             KeyCode::Tab => { self.next_panel(); UiAction::None }
@@ -126,16 +110,47 @@ impl UiApp {
                 self.handle_logs_action()
             }
 
-            // Container list navigation (when on Containers tab)
+            // Image actions (when on Images tab)
+            KeyCode::Char('d') if self.state.current_tab == Tab::Images => {
+                self.handle_image_remove_action()
+            }
+            KeyCode::Char('p') if self.state.current_tab == Tab::Images => {
+                self.handle_image_prune_action()
+            }
+            KeyCode::Char('i') if self.state.current_tab == Tab::Images => {
+                self.handle_image_inspect_action()
+            }
+
+            // List navigation (when on Containers or Images tab)
             KeyCode::Char('j') => {
-                if self.state.current_tab == Tab::Containers {
-                    self.state.next_container();
+                match self.state.current_tab {
+                    Tab::Containers => self.state.next_container(),
+                    Tab::Images => self.state.next_image(),
+                    _ => {}
                 }
                 UiAction::None
             }
             KeyCode::Char('k') => {
-                if self.state.current_tab == Tab::Containers {
-                    self.state.previous_container();
+                match self.state.current_tab {
+                    Tab::Containers => self.state.previous_container(),
+                    Tab::Images => self.state.previous_image(),
+                    _ => {}
+                }
+                UiAction::None
+            }
+            KeyCode::Up => {
+                match self.state.current_tab {
+                    Tab::Containers => self.state.previous_container(),
+                    Tab::Images => self.state.previous_image(),
+                    _ => self.previous_tab(),
+                }
+                UiAction::None
+            }
+            KeyCode::Down => {
+                match self.state.current_tab {
+                    Tab::Containers => self.state.next_container(),
+                    Tab::Images => self.state.next_image(),
+                    _ => self.next_tab(),
                 }
                 UiAction::None
             }
@@ -258,6 +273,43 @@ impl UiApp {
     fn handle_logs_action(&mut self) -> UiAction {
         if let Some(id) = self.selected_container_id() {
             UiAction::ShowContainerLogs(id)
+        } else {
+            UiAction::None
+        }
+    }
+
+    /// Handle image remove action (with confirmation)
+    fn handle_image_remove_action(&mut self) -> UiAction {
+        if let Some(image) = self.state.images.get(self.state.image_list_selected) {
+            let name = if image.dangling {
+                "<dangling>".to_string()
+            } else {
+                image.repo_tags.first().cloned().unwrap_or_else(|| image.short_id.clone())
+            };
+            let id = image.id.clone();
+            
+            self.state.confirm_dialog = Some(ConfirmAction {
+                message: format!("Remove image '{}'?", name),
+                action: UiAction::RemoveImage(id),
+            });
+        }
+        UiAction::None
+    }
+
+    /// Handle image prune action (with confirmation)
+    fn handle_image_prune_action(&mut self) -> UiAction {
+        self.state.confirm_dialog = Some(ConfirmAction {
+            message: "Remove all dangling images?".to_string(),
+            action: UiAction::PruneImages,
+        });
+        UiAction::None
+    }
+
+    /// Handle image inspect action
+    fn handle_image_inspect_action(&mut self) -> UiAction {
+        if let Some(image) = self.state.images.get(self.state.image_list_selected) {
+            let id = image.id.clone();
+            UiAction::InspectImage(id)
         } else {
             UiAction::None
         }
@@ -484,12 +536,31 @@ impl UiApp {
 
         self.render_sidebar(frame, content_layout[0]);
         
-        // For Containers tab with containers available, use split view
-        if self.state.current_tab == Tab::Containers && !self.state.containers.is_empty() {
-            self.render_containers_split_view(frame, content_layout[1]);
-        } else {
-            self.render_main_panel(frame, content_layout[1]);
+        // Render tab-specific content
+        match self.state.current_tab {
+            Tab::Containers if !self.state.containers.is_empty() => {
+                self.render_containers_split_view(frame, content_layout[1]);
+            }
+            Tab::Images if !self.state.images.is_empty() => {
+                self.render_images_view(frame, content_layout[1]);
+            }
+            _ => {
+                self.render_main_panel(frame, content_layout[1]);
+            }
         }
+    }
+
+    /// Render images view
+    fn render_images_view(&self, frame: &mut Frame, area: Rect) {
+        // Create image list widget
+        let mut widget = crate::ui::components::ImageListWidget::new(self.state.images.clone());
+        if !self.state.images.is_empty() {
+            widget.set_selected(Some(self.state.image_list_selected));
+        }
+        let table = widget.build_table();
+        let mut table_state = ratatui::widgets::TableState::default();
+        table_state.select(Some(self.state.image_list_selected));
+        frame.render_stateful_widget(table, area, &mut table_state);
     }
 
     /// Render containers in split view (list | detail)
@@ -612,6 +683,8 @@ impl UiApp {
             Cow::Borrowed(" Press any key to close help ")
         } else if self.state.current_tab == Tab::Containers && !self.state.containers.is_empty() {
             Cow::Borrowed(" [↑/↓]Select [s]Start [p]Pause [r]Restart [k]Kill [d]Delete [l]Logs [?]Help [q]Quit ")
+        } else if self.state.current_tab == Tab::Images && !self.state.images.is_empty() {
+            Cow::Borrowed(" [↑/↓]Select [d]Delete [p]Prune [i]Inspect [?]Help [q]Quit ")
         } else {
             Cow::Borrowed(" [←/→ or 1-6]:Switch Tabs | [?]:Help | [q]:Quit ")
         };

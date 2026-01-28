@@ -187,6 +187,17 @@ impl App {
                 info!("Show logs not yet implemented");
                 self.state.add_notification("Logs view not yet implemented", NotificationLevel::Warning);
             }
+            UiAction::RemoveImage(id) => {
+                self.remove_image(&id).await;
+            }
+            UiAction::PruneImages => {
+                self.prune_images().await;
+            }
+            UiAction::InspectImage(_id) => {
+                // TODO: Implement image inspect view in future story
+                info!("Image inspect not yet implemented");
+                self.state.add_notification("Image inspect not yet implemented", NotificationLevel::Warning);
+            }
         }
     }
 
@@ -332,9 +343,69 @@ impl App {
                 }
             }
 
-            // TODO: Load images, volumes, networks (future stories)
+            // Fetch images
+            match client.list_images(true).await {
+                Ok(images) => {
+                    self.state.update_images(images);
+                    debug!("Loaded {} images", self.state.images.len());
+                }
+                Err(e) => {
+                    warn!("Failed to load images: {}", e);
+                }
+            }
+
+            // TODO: Load volumes, networks (future stories)
         }
     }
+
+    /// Remove an image
+    async fn remove_image(&mut self, id: &str) {
+        if let Some(client) = &self.docker_client {
+            info!("Removing image {}", id);
+            match client.remove_image(id, false).await {
+                Ok(_) => {
+                    info!("Image {} removed", id);
+                    self.state.add_notification("Image removed", NotificationLevel::Success);
+                    self.refresh_data().await;
+                }
+                Err(e) => {
+                    error!("Failed to remove image {}: {}", id, e);
+                    self.state.add_notification(format!("Failed to remove image: {}", e), NotificationLevel::Error);
+                }
+            }
+        }
+    }
+
+    /// Prune dangling images
+    async fn prune_images(&mut self) {
+        if let Some(client) = &self.docker_client {
+            info!("Pruning dangling images");
+            match client.prune_images().await {
+                Ok(reclaimed) => {
+                    let size_str = format_size(reclaimed);
+                    info!("Pruned images, reclaimed {}", size_str);
+                    self.state.add_notification(format!("Pruned images, reclaimed {}", size_str), NotificationLevel::Success);
+                    self.refresh_data().await;
+                }
+                Err(e) => {
+                    error!("Failed to prune images: {}", e);
+                    self.state.add_notification(format!("Failed to prune images: {}", e), NotificationLevel::Error);
+                }
+            }
+        }
+    }
+}
+
+/// Format size in human readable format
+fn format_size(size: u64) -> String {
+    const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
+    if size == 0 {
+        return "0 B".to_string();
+    }
+    let size = size as f64;
+    let exp = (size.ln() / 1024_f64.ln()).min(UNITS.len() as f64 - 1.0) as usize;
+    let size = size / 1024_f64.powi(exp as i32);
+    format!("{:.1} {}", size, UNITS[exp])
 }
 
 /// Setup the terminal for TUI

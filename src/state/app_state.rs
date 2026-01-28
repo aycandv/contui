@@ -20,6 +20,8 @@ pub struct AppState {
     pub selected_container: Option<String>,
     pub container_list_selected: usize,
     pub images: Vec<ImageSummary>,
+    pub selected_image: Option<String>,
+    pub image_list_selected: usize,
     pub volumes: Vec<VolumeSummary>,
     pub networks: Vec<NetworkSummary>,
 
@@ -64,6 +66,8 @@ impl AppState {
             selected_container: None,
             container_list_selected: 0,
             images: vec![],
+            selected_image: None,
+            image_list_selected: 0,
             volumes: vec![],
             networks: vec![],
             docker_connected: false,
@@ -96,6 +100,50 @@ impl AppState {
     pub fn clear_old_notifications(&mut self, max_age_seconds: i64) {
         let cutoff = Utc::now() - chrono::Duration::seconds(max_age_seconds);
         self.notifications.retain(|n| n.timestamp > cutoff);
+    }
+
+    /// Update images list
+    pub fn update_images(&mut self, images: Vec<ImageSummary>) {
+        self.images = images;
+        // Adjust selection if needed
+        if !self.images.is_empty() {
+            if self.image_list_selected >= self.images.len() {
+                self.image_list_selected = self.images.len() - 1;
+            }
+            self.selected_image = Some(
+                self.images[self.image_list_selected].id.clone()
+            );
+        } else {
+            self.image_list_selected = 0;
+            self.selected_image = None;
+        }
+    }
+
+    /// Navigate to next image in list
+    pub fn next_image(&mut self) {
+        if self.images.is_empty() {
+            return;
+        }
+        self.image_list_selected = 
+            (self.image_list_selected + 1) % self.images.len();
+        self.selected_image = Some(
+            self.images[self.image_list_selected].id.clone()
+        );
+    }
+
+    /// Navigate to previous image in list
+    pub fn previous_image(&mut self) {
+        if self.images.is_empty() {
+            return;
+        }
+        if self.image_list_selected == 0 {
+            self.image_list_selected = self.images.len() - 1;
+        } else {
+            self.image_list_selected -= 1;
+        }
+        self.selected_image = Some(
+            self.images[self.image_list_selected].id.clone()
+        );
     }
 
     /// Update containers list
@@ -140,11 +188,6 @@ impl AppState {
         self.selected_container = Some(
             self.containers[self.container_list_selected].id.clone()
         );
-    }
-
-    /// Update images list
-    pub fn update_images(&mut self, images: Vec<ImageSummary>) {
-        self.images = images;
     }
 
     /// Update volumes list

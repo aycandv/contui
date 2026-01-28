@@ -229,6 +229,12 @@ pub enum UiAction {
     RemoveContainer(String),
     /// Show logs for a container
     ShowContainerLogs(String),
+    /// Remove an image
+    RemoveImage(String),
+    /// Prune dangling images
+    PruneImages,
+    /// Inspect an image
+    InspectImage(String),
 }
 
 /// Confirmation dialog action
