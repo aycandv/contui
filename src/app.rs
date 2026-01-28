@@ -3,7 +3,7 @@
 use anyhow::Result;
 use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
 use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
-use futures::StreamExt;
+
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 use std::io;
@@ -117,8 +117,8 @@ impl App {
                 self.handle_ui_action(action).await;
                 
                 // Then sync UI state changes (confirm_dialog, show_help, etc.) to self.state
-                // We need to preserve: containers, notifications, log_view (from action handler)
-                // We need to sync from UI: confirm_dialog, show_help, current_tab, etc.
+                // We need to preserve: containers, notifications (from action handler)
+                // We need to sync from UI: confirm_dialog, show_help, current_tab, log_view, etc.
                 let mut ui_state = ui_app.state;
                 
                 // Preserve data that action handler may have updated
@@ -129,7 +129,15 @@ impl App {
                 ui_state.images = self.state.images.clone();
                 ui_state.volumes = self.state.volumes.clone();
                 ui_state.networks = self.state.networks.clone();
-                ui_state.log_view = self.state.log_view.clone(); // PRESERVE LOG VIEW!
+                
+                // For log_view: if UI has it open and App has fetched logs, merge them
+                // If UI closed it (None), keep it closed
+                if ui_state.log_view.is_some() && self.state.log_view.is_some() {
+                    // Both have log view open - use App's logs (which were fetched)
+                    ui_state.log_view = self.state.log_view.clone();
+                }
+                // If ui_state.log_view is None (user closed it), keep it None
+                // If self.state.log_view is None but ui_state has it, user just opened it - keep ui_state
                 
                 self.state = ui_state;
 
@@ -586,13 +594,5 @@ fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Re
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     // Note: Most tests would require async runtime and Docker
-
-    #[test]
-    fn test_terminal_setup_restore() {
-        // This test would need to be integration test with proper terminal handling
-        // For now just verify the functions exist
-    }
 }

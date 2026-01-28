@@ -224,6 +224,14 @@ impl UiApp {
                 self.state.close_log_view();
                 UiAction::None
             }
+            // Refresh logs
+            KeyCode::Char('r') => {
+                if let Some(ref log_view) = self.state.log_view {
+                    let id = log_view.container_id.clone();
+                    return UiAction::ShowContainerLogs(id);
+                }
+                UiAction::None
+            }
             // Toggle follow mode
             KeyCode::Char('f') => {
                 self.state.toggle_log_follow();
@@ -842,7 +850,7 @@ impl UiApp {
     /// Render the footer
     fn render_footer(&self, frame: &mut Frame, area: Rect) {
         let help_text = if self.state.log_view.is_some() {
-            Cow::Borrowed(" [↑/↓]Scroll [PgUp/PgDn]Page [f]Follow [Home]Top [End]Bottom [q]Close ")
+            Cow::Borrowed(" [↑/↓]Scroll [PgUp/PgDn]Page [r]Refresh [f]Follow [Home]Top [End]Bottom [q]Close ")
         } else if self.state.confirm_dialog.is_some() {
             Cow::Borrowed(" [y]Yes [n]No ")
         } else if self.state.show_help {
@@ -907,6 +915,13 @@ Networks Tab:
   ↑/↓ or j/k       Select network
   d                Delete network
   p                Prune unused networks
+
+Log View:
+  ↑/↓ or PgUp/PgDn Scroll
+  r                Refresh logs
+  f                Toggle follow mode
+  Home/End         Jump to top/bottom
+  q or Esc         Close log view
 
 Global:
   q or Ctrl+C      Quit

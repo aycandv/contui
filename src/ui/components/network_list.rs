@@ -7,7 +7,7 @@ use ratatui::{
     widgets::{Block, Borders, Row, Table, TableState},
 };
 
-use crate::core::{NetworkScope, NetworkSummary};
+use crate::core::NetworkSummary;
 
 /// Widget for displaying a list of Docker networks
 pub struct NetworkListWidget {
@@ -173,6 +173,7 @@ impl NetworkListWidget {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::NetworkScope;
     use chrono::Utc;
 
     fn create_test_networks() -> Vec<NetworkSummary> {

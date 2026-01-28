@@ -18,7 +18,7 @@ pub struct LogEntry {
 impl DockerClient {
     /// Fetch the last N lines of logs from a container (non-streaming)
     pub async fn fetch_logs(&self, id: &str, tail: usize) -> Result<Vec<LogEntry>> {
-        use crate::core::DockMonError;
+        // use crate::core::DockMonError;
         
         debug!("Fetching last {} log lines for container {}", tail, id);
 

@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use serde::Deserialize;
+
 use tracing::{debug, info};
 
 pub mod model;
@@ -101,7 +101,6 @@ impl Default for Config {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
     use tempfile::NamedTempFile;
 
     #[test]
@@ -129,7 +128,7 @@ mod tests {
     #[test]
     fn test_config_save_and_load() {
         let config = Config::default();
-        let mut temp_file = NamedTempFile::new().unwrap();
+        let temp_file = NamedTempFile::new().unwrap();
         
         config.save(temp_file.path()).unwrap();
         
