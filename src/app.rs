@@ -15,6 +15,7 @@ use crate::core::{ConnectionInfo, NotificationLevel, Result as DockMonResult};
 use crate::docker::{DockerClient, LogEntry};
 use crate::state::AppState;
 use crate::ui::{UiAction, UiApp};
+use tokio::sync::mpsc;
 
 /// Main application struct
 pub struct App {
@@ -22,8 +23,8 @@ pub struct App {
     config: Config,
     state: AppState,
     docker_client: Option<DockerClient>,
-    /// Pending log fetch task (container_id, join_handle)
-    pending_log_fetch: Option<(String, tokio::task::JoinHandle<DockMonResult<Vec<LogEntry>>>)>,
+    /// Channel receiver for log fetch results
+    log_fetch_rx: Option<mpsc::Receiver<DockMonResult<Vec<LogEntry>>>>,
 }
 
 impl App {
@@ -50,7 +51,7 @@ impl App {
             config,
             state,
             docker_client,
-            pending_log_fetch: None,
+            log_fetch_rx: None,
         })
     }
 
@@ -154,10 +155,8 @@ impl App {
 
             // Periodic tasks (every 250ms)
             if last_tick.elapsed() >= tick_rate {
-                // Check for completed log fetches (only if there's a pending one)
-                if self.pending_log_fetch.is_some() {
-                    self.check_pending_log_fetch();
-                }
+                // Check for completed log fetches
+                self.check_log_fetch().await;
                 
                 // Refresh data periodically (every 2 seconds)
                 if last_data_refresh.elapsed() >= data_refresh_rate {
@@ -526,72 +525,71 @@ impl App {
         }
     }
 
-    /// Start fetching logs from a container (non-blocking, spawns background task)
+    /// Start fetching logs from a container (non-blocking, uses channel)
     fn start_log_streaming(&mut self, container_id: String) {
         if let Some(client) = &self.docker_client {
-            // Cancel any existing pending fetch
-            if let Some((id, handle)) = self.pending_log_fetch.take() {
-                handle.abort();
-                info!("Cancelled pending log fetch for container '{}'", id);
+            // Cancel any existing pending fetch by dropping the receiver
+            if self.log_fetch_rx.is_some() {
+                info!("Cancelling previous log fetch");
+                self.log_fetch_rx = None;
             }
             
             info!("Starting log fetch for container '{}'", container_id);
             self.state.add_notification("Fetching logs...", NotificationLevel::Info);
             
+            // Create channel for results
+            let (tx, rx) = mpsc::channel(1);
+            self.log_fetch_rx = Some(rx);
+            
             // Clone for the async task
             let client = client.clone();
-            let container_id_clone = container_id.clone();
             
-            // Spawn async task with overall timeout
-            let handle = tokio::spawn(async move {
-                tokio::time::timeout(
+            // Spawn async task - result will be sent via channel
+            tokio::spawn(async move {
+                let result = tokio::time::timeout(
                     std::time::Duration::from_secs(5),
-                    client.fetch_logs(&container_id_clone, 100)
-                ).await.map_err(|_| crate::core::DockMonError::Other("Log fetch timeout".to_string()))?
+                    client.fetch_logs(&container_id, 100)
+                ).await.map_err(|_| crate::core::DockMonError::Other("Log fetch timeout".to_string()))?;
+                
+                // Send result back via channel (ignore send errors if receiver dropped)
+                let _ = tx.send(result).await;
+                Ok::<(), crate::core::DockMonError>(())
             });
-            
-            self.pending_log_fetch = Some((container_id, handle));
         } else {
             self.state.add_notification("Not connected to Docker", NotificationLevel::Error);
         }
     }
     
-    /// Check if pending log fetch has completed and update state
-    fn check_pending_log_fetch(&mut self) {
-        if let Some((container_id, handle)) = self.pending_log_fetch.take() {
-            // Use is_finished() to check without blocking
-            if handle.is_finished() {
-                // Task completed - use block_on to get result since we're in a sync context
-                match tokio::task::block_in_place(|| {
-                    tokio::runtime::Handle::current().block_on(handle)
-                }) {
-                    Ok(Ok(entries)) => {
-                        let count = entries.len();
-                        info!("Fetched {} log entries for container {}", count, container_id);
-                        if count == 0 {
-                            self.state.add_notification(
-                                format!("No logs found for container {}", &container_id[..12.min(container_id.len())]), 
-                                NotificationLevel::Warning
-                            );
-                        } else {
-                            for entry in entries {
-                                self.state.add_log_entry(entry);
-                            }
-                            self.state.add_notification(format!("Loaded {} log lines", count), NotificationLevel::Success);
+    /// Check if log fetch has completed and update state
+    async fn check_log_fetch(&mut self) {
+        if let Some(rx) = &mut self.log_fetch_rx {
+            // Try to receive with a very short timeout (non-blocking check)
+            match tokio::time::timeout(Duration::from_millis(1), rx.recv()).await {
+                Ok(Some(Ok(entries))) => {
+                    self.log_fetch_rx = None; // Clear the receiver
+                    let count = entries.len();
+                    info!("Fetched {} log entries", count);
+                    if count == 0 {
+                        self.state.add_notification("No logs found", NotificationLevel::Warning);
+                    } else {
+                        for entry in entries {
+                            self.state.add_log_entry(entry);
                         }
-                    }
-                    Ok(Err(e)) => {
-                        warn!("Failed to fetch logs for container {}: {}", container_id, e);
-                        self.state.add_notification(format!("Failed to fetch logs: {}", e), NotificationLevel::Error);
-                    }
-                    Err(e) => {
-                        warn!("Log fetch task panicked for container {}: {}", container_id, e);
-                        self.state.add_notification("Log fetch failed", NotificationLevel::Error);
+                        self.state.add_notification(format!("Loaded {} log lines", count), NotificationLevel::Success);
                     }
                 }
-            } else {
-                // Not finished, put it back
-                self.pending_log_fetch = Some((container_id, handle));
+                Ok(Some(Err(e))) => {
+                    self.log_fetch_rx = None;
+                    warn!("Failed to fetch logs: {}", e);
+                    self.state.add_notification(format!("Failed to fetch logs: {}", e), NotificationLevel::Error);
+                }
+                Ok(None) => {
+                    // Channel closed
+                    self.log_fetch_rx = None;
+                }
+                Err(_) => {
+                    // Timeout - still waiting, that's fine
+                }
             }
         }
     }
