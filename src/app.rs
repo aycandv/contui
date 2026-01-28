@@ -195,8 +195,18 @@ impl App {
                 self.remove_container(&id).await;
             }
             UiAction::ShowContainerLogs(id) => {
-                // ULTRA MINIMAL - just set a flag, nothing else
-                self.state.test_log_view_flag = true;
+                // Open log view if not already open
+                if self.state.log_view.is_none() {
+                    if let Some(container) = self.state.containers.get(self.state.container_list_selected) {
+                        let name = container.names.first().cloned().unwrap_or_else(|| container.short_id.clone());
+                        self.state.open_log_view(id.clone(), name);
+                        self.state.add_notification("Press 'r' to load logs", NotificationLevel::Info);
+                    }
+                } else {
+                    // Log view is already open, user pressed 'r' to refresh
+                    self.state.add_notification("Loading logs...", NotificationLevel::Info);
+                    self.start_log_streaming(id);
+                }
             }
             UiAction::RemoveImage(id) => {
                 self.remove_image(&id).await;

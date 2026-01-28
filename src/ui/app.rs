@@ -67,17 +67,11 @@ impl UiApp {
 
         // Global key handlers
         match key.code {
-            // Quit (or clear test flag)
+            // Quit
             KeyCode::Char('q') if key.modifiers.is_empty() => {
-                if self.state.test_log_view_flag {
-                    // DEBUG: clear test flag instead of quitting
-                    self.state.test_log_view_flag = false;
-                    UiAction::None
-                } else {
-                    info!("Quit key pressed");
-                    self.should_quit = true;
-                    UiAction::Quit
-                }
+                info!("Quit key pressed");
+                self.should_quit = true;
+                UiAction::Quit
             }
             KeyCode::Char('c') if key.modifiers == KeyModifiers::CONTROL => {
                 info!("Ctrl+C pressed");
@@ -228,7 +222,6 @@ impl UiApp {
             // Exit log view
             KeyCode::Char('q') | KeyCode::Esc => {
                 self.state.close_log_view();
-                self.state.test_log_view_flag = false; // DEBUG: also clear test flag
                 UiAction::None
             }
             // Refresh logs
@@ -530,14 +523,6 @@ impl UiApp {
         // Render log viewer if active (on top of everything)
         if let Some(ref log_view) = self.state.log_view {
             crate::ui::components::log_viewer::render_log_viewer(frame, area, log_view);
-        }
-        
-        // DEBUG: show test flag status
-        if self.state.test_log_view_flag {
-            let test_msg = ratatui::widgets::Paragraph::new("TEST FLAG IS SET - press 'q' to clear")
-                .style(ratatui::style::Style::default().fg(ratatui::style::Color::Magenta))
-                .block(ratatui::widgets::Block::default().borders(ratatui::widgets::Borders::ALL));
-            frame.render_widget(test_msg, area);
         }
 
         // Render confirmation dialog if active
