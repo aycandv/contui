@@ -583,13 +583,12 @@ impl App {
                     self.log_fetch_rx = None; // Clear the receiver
                     let count = entries.len();
                     info!("Fetched {} log entries", count);
-                    if count == 0 {
-                        self.state.add_notification("No logs found", NotificationLevel::Warning);
-                    } else {
+                    if count > 0 {
                         for entry in entries {
                             self.state.add_log_entry(entry);
                         }
-                        self.state.add_notification(format!("Loaded {} log lines", count), NotificationLevel::Success);
+                        // Don't show notification for auto-refreshes in follow mode
+                        // (only manual 'r' press shows notification)
                     }
                 }
                 Ok(Some(Err(e))) => {
