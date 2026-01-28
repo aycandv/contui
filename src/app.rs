@@ -508,9 +508,15 @@ impl App {
             // Fetch the last 100 lines of logs
             match client.fetch_logs(&container_id, 100).await {
                 Ok(entries) => {
-                    info!("Fetched {} log entries", entries.len());
-                    for entry in entries {
-                        self.state.add_log_entry(entry);
+                    let count = entries.len();
+                    info!("Fetched {} log entries", count);
+                    if count == 0 {
+                        self.state.add_notification("No logs found for container", NotificationLevel::Warning);
+                    } else {
+                        for entry in entries {
+                            self.state.add_log_entry(entry);
+                        }
+                        self.state.add_notification(format!("Loaded {} log lines", count), NotificationLevel::Success);
                     }
                 }
                 Err(e) => {
@@ -518,6 +524,8 @@ impl App {
                     self.state.add_notification(format!("Failed to fetch logs: {}", e), NotificationLevel::Error);
                 }
             }
+        } else {
+            self.state.add_notification("Not connected to Docker", NotificationLevel::Error);
         }
     }
 }

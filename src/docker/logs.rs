@@ -37,8 +37,15 @@ impl DockerClient {
         while let Some(result) = stream.next().await {
             match result {
                 Ok(log) => {
-                    if let Ok(entry) = Self::parse_log_entry(log) {
-                        entries.push(entry);
+                    debug!("Raw log output: {:?}", log);
+                    match Self::parse_log_entry(log) {
+                        Ok(entry) => {
+                            debug!("Parsed log entry: {:?}", entry);
+                            entries.push(entry);
+                        }
+                        Err(e) => {
+                            debug!("Failed to parse log entry: {}", e);
+                        }
                     }
                 }
                 Err(e) => {
@@ -48,7 +55,7 @@ impl DockerClient {
             }
         }
 
-        debug!("Fetched {} log entries", entries.len());
+        debug!("Fetched {} log entries total", entries.len());
         Ok(entries)
     }
 
@@ -84,7 +91,7 @@ impl DockerClient {
         use crate::core::{DockMonError, DockerError};
 
         // Extract message from log output
-        let (message, is_stderr) = match log {
+        let (raw_message, is_stderr) = match log {
             bollard::container::LogOutput::StdOut { message } => {
                 (String::from_utf8_lossy(&message).to_string(), false)
             }
@@ -96,16 +103,31 @@ impl DockerClient {
             }
         };
 
+        // Trim the message to remove trailing newlines
+        let message = raw_message.trim_end().to_string();
+        
+        debug!("Parsing log message: '{}' (len={})", message, message.len());
+
         // Parse timestamp from message (format: "2024-01-28T10:30:00.123456789Z message")
-        // Some logs might not have timestamps, so handle that case
-        let (timestamp, message) = if message.len() > 20 && message.contains('T') {
-            if let Some(pos) = message.find(' ') {
-                let ts_str = &message[..pos];
-                let msg = message[pos + 1..].to_string();
-                let timestamp = chrono::DateTime::parse_from_rfc3339(ts_str)
-                    .ok()
-                    .map(|dt| dt.with_timezone(&chrono::Utc));
-                (timestamp, msg)
+        // Docker adds timestamps when timestamps=true in options
+        let (timestamp, message) = if message.len() > 20 {
+            // Look for RFC3339 timestamp pattern: YYYY-MM-DDTHH:MM:SS
+            if message.chars().nth(4) == Some('-') 
+                && message.chars().nth(7) == Some('-')
+                && message.chars().nth(10) == Some('T')
+                && message.chars().nth(13) == Some(':')
+            {
+                if let Some(pos) = message.find(' ') {
+                    let ts_str = &message[..pos];
+                    let msg = message[pos + 1..].to_string();
+                    let timestamp = chrono::DateTime::parse_from_rfc3339(ts_str)
+                        .ok()
+                        .map(|dt| dt.with_timezone(&chrono::Utc));
+                    debug!("Parsed timestamp: {:?}", timestamp);
+                    (timestamp, msg)
+                } else {
+                    (None, message)
+                }
             } else {
                 (None, message)
             }
