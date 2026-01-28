@@ -1,0 +1,79 @@
+[package]
+name = "dockmon"
+version = "0.1.0"
+edition = "2021"
+authors = ["DockMon Contributors"]
+description = "Advanced Docker TUI for container monitoring and management"
+license = "MIT"
+repository = "https://github.com/yourusername/dockmon"
+keywords = ["docker", "tui", "containers", "monitoring", "ratatui"]
+categories = ["command-line-utilities", "development-tools"]
+rust-version = "1.70"
+
+[lib]
+name = "dockmon"
+path = "src/lib.rs"
+
+[[bin]]
+name = "dockmon"
+path = "src/main.rs"
+
+[dependencies]
+# TUI Framework
+ratatui = { version = "0.29", features = ["all-widgets"] }
+crossterm = { version = "0.28", features = ["event-stream"] }
+
+# Docker API Client
+bollard = "0.18"
+
+# Async Runtime
+tokio = { version = "1.43", features = ["full"] }
+tokio-stream = "0.1"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+serde_json = "1.0"
+
+# Date/Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Error Handling
+anyhow = "1.0"
+thiserror = "2.0"
+
+# Text Processing
+regex = "1.11"
+unicode-width = "0.2"
+textwrap = "0.16"
+
+# Utilities
+lazy_static = "1.5"
+directories = "5.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+futures = "0.3"
+async-trait = "0.1"
+uuid = { version = "1.12", features = ["v4", "serde"] }
+
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+
+[dev-dependencies]
+# Testing
+mockall = "0.13"
+tokio-test = "0.4"
+
+# Additional test utilities
+insta = { version = "1.41", features = ["yaml"] }
+pretty_assertions = "1.4"
+tempfile = "3.16"
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true
+
+[profile.dev]
+opt-level = 0
+debug = true

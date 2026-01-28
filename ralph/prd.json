@@ -21,8 +21,8 @@
         "Typecheck passes"
       ],
       "priority": 1,
-      "passes": false,
-      "notes": "Foundation story - must be completed first"
+      "passes": true,
+      "notes": "Complete - 27 tests passing, CI configured"
     },
     {
       "id": "US-002",
