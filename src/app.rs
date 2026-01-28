@@ -535,13 +535,22 @@ impl App {
             
             info!("Starting log fetch for container '{}'", container_id);
             
-            // Clone for the async task
+            // Clone for the blocking task
             let client = client.clone();
             let container_id_clone = container_id.clone();
             
-            // Spawn background task to fetch logs
-            let handle = tokio::spawn(async move {
-                client.fetch_logs(&container_id_clone, 100).await
+            // Spawn in blocking thread to fully isolate from async runtime
+            // This is necessary because bollard's logs() can block the reactor
+            let handle = tokio::task::spawn_blocking(move || {
+                // Create a new runtime for this blocking thread
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .map_err(|e| crate::core::DockMonError::Other(format!("Failed to create runtime: {}", e)))?;
+                
+                rt.block_on(async move {
+                    client.fetch_logs(&container_id_clone, 100).await
+                })
             });
             
             self.pending_log_fetch = Some((container_id, handle));
