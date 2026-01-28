@@ -1,15 +1,8 @@
 //! User interface module
 
+pub mod app;
 pub mod components;
 pub mod screens;
 pub mod widgets;
 
-// UI will be fully implemented starting US-005
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test_placeholder() {
-        assert!(true);
-    }
-}
+pub use app::UiApp;

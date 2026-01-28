@@ -1,11 +1,5 @@
 //! Application state management
 
-// State management will be fully implemented in US-006
+pub mod app_state;
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test_placeholder() {
-        assert!(true);
-    }
-}
+pub use app_state::{AppState, Notification, Panel};
