@@ -185,7 +185,14 @@ impl App {
                 self.remove_container(&id).await;
             }
             UiAction::ShowContainerLogs(id) => {
-                // Start log streaming in a background task
+                // Open log view if not already open
+                if self.state.log_view.is_none() {
+                    if let Some(container) = self.state.containers.get(self.state.container_list_selected) {
+                        let name = container.names.first().cloned().unwrap_or_else(|| container.short_id.clone());
+                        self.state.open_log_view(id.clone(), name);
+                    }
+                }
+                // Start log streaming
                 self.start_log_streaming(id).await;
             }
             UiAction::RemoveImage(id) => {

@@ -349,13 +349,10 @@ impl UiApp {
             let id = container.id.clone();
             let name = container.names.first().cloned().unwrap_or_else(|| container.short_id.clone());
             
-            // Open log view in state
-            self.state.open_log_view(id.clone(), name.clone());
-            
             // Show notification that we're loading logs
             self.state.add_notification(format!("Loading logs for {}...", name), NotificationLevel::Info);
             
-            // Return action to start log streaming
+            // Return action to start log streaming (log view will be opened in handle_ui_action)
             UiAction::ShowContainerLogs(id)
         } else {
             UiAction::None
@@ -518,6 +515,9 @@ impl UiApp {
         // Render log viewer if active (on top of everything)
         if let Some(ref log_view) = self.state.log_view {
             crate::ui::components::log_viewer::render_log_viewer(frame, area, log_view);
+        } else {
+            // Debug: check if we should be showing logs
+            // eprintln!("DEBUG: log_view is None, not rendering log viewer");
         }
 
         // Render confirmation dialog if active
