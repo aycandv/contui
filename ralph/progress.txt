@@ -13,22 +13,25 @@ Foundation Layer (Infrastructure)
     Commit: e13c419
     Notes: All acceptance criteria met - 27 tests passing 
 
-[ ] US-002: Core types and error handling
+[X] US-002: Core types and error handling
     Dependencies: US-001
-    Status: Not started
-    Notes:
+    Status: Complete
+    Commit: e13c419 (foundation)
+    Notes: Types defined in core/ module
 
-[ ] US-003: Docker client wrapper and connection
+[X] US-003: Docker client wrapper and connection
     Dependencies: US-002
-    Status: Not started
-    Notes:
+    Status: Complete
+    Commit: e13c419 (foundation)
+    Notes: DockerClient with connection management
 
 Core Features (Docker Operations)
 ----------------------------------
-[ ] US-004: Container list and basic operations
+[X] US-004: Container list and basic operations
     Dependencies: US-003
-    Status: Not started
-    Notes:
+    Status: Complete
+    Commit: 5a94f3d
+    Notes: All lifecycle operations implemented
 
 [ ] US-005: Basic TUI layout and rendering
     Dependencies: US-001
@@ -145,18 +148,26 @@ Release
 
 === Stats ===
 Total Stories: 25
-Completed: 0
+Completed: 4
 In Progress: 0
-Remaining: 25
+Remaining: 21
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██░░░░░░░░] 16%
 
 === Recent Activity ===
 (Most recent first)
 
+- 2024-01-28: US-004 Complete - Container operations implemented
+  Commit: 5a94f3d feat(docker): implement container list and lifecycle operations
+  - list_containers(), start/stop/restart/pause/unpause/kill/remove
+  - ContainerSummary type conversion from bollard
+  - Integration tests added
+
+- 2024-01-28: US-001 Complete - Project setup merged to main
+  Commit: 8bdb694 Merge US-001: Project setup and dependencies
+  - All foundation stories (US-001, US-002, US-003) complete
+  - 27+ tests passing
+
 - 2024-01-28: Initial commit - comprehensive documentation added
   Commit: ad4d1ce docs(project): add comprehensive PRD and technical documentation
   Files: 10 files, 4838 insertions
-- 2024-01-28: Project initialized
-- 2024-01-28: PRD created
-- 2024-01-28: Git repository initialized
