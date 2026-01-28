@@ -22,12 +22,14 @@ impl DockerClient {
         
         debug!("Fetching last {} log lines for container {}", tail, id);
 
-        let options = LogsOptions {
+        // Build options
+        let tail_str = if tail == 0 { "all".to_string() } else { tail.to_string() };
+        let options = LogsOptions::<String> {
             stdout: true,
             stderr: true,
             timestamps: true,
             follow: false,
-            tail: tail.to_string(),
+            tail: tail_str,
             ..Default::default()
         };
 
@@ -91,17 +93,24 @@ impl DockerClient {
         use crate::core::{DockMonError, DockerError};
 
         // Extract message from log output
-        let (raw_message, is_stderr) = match log {
+        // Note: bollard returns Console for both stdout and stderr when timestamps are enabled
+        let raw_message = match log {
             bollard::container::LogOutput::StdOut { message } => {
-                (String::from_utf8_lossy(&message).to_string(), false)
+                String::from_utf8_lossy(&message).to_string()
             }
             bollard::container::LogOutput::StdErr { message } => {
-                (String::from_utf8_lossy(&message).to_string(), true)
+                String::from_utf8_lossy(&message).to_string()
+            }
+            bollard::container::LogOutput::Console { message } => {
+                String::from_utf8_lossy(&message).to_string()
             }
             _ => {
                 return Err(DockMonError::Docker(DockerError::Container("Unknown log output type".to_string())));
             }
         };
+        
+        // Try to detect stderr by content (ERROR, CRITICAL, etc.)
+        let is_stderr = raw_message.contains(" ERROR:") || raw_message.contains(" CRITICAL:");
 
         // Trim the message to remove trailing newlines
         let message = raw_message.trim_end().to_string();
@@ -110,6 +119,7 @@ impl DockerClient {
 
         // Parse timestamp from message (format: "2024-01-28T10:30:00.123456789Z message")
         // Docker adds timestamps when timestamps=true in options
+        // When timestamps=false, we just use the current time
         let (timestamp, message) = if message.len() > 20 {
             // Look for RFC3339 timestamp pattern: YYYY-MM-DDTHH:MM:SS
             if message.chars().nth(4) == Some('-') 
@@ -151,8 +161,78 @@ mod tests {
 
     #[tokio::test]
     #[ignore = "requires Docker daemon"]
-    async fn test_stream_logs() {
+    async fn test_fetch_logs() {
         let client = DockerClient::from_env().await.unwrap();
-        // This would need a running container to test properly
+        
+        // List containers and try to get logs from the first one
+        let containers = client.list_containers(true).await.unwrap();
+        if let Some(container) = containers.first() {
+            println!("Fetching logs for container: {} ({})", container.short_id, container.id);
+            let logs = client.fetch_logs(&container.id, 10).await;
+            println!("Result: {:?}", logs);
+            assert!(logs.is_ok());
+            let entries = logs.unwrap();
+            println!("Fetched {} log entries", entries.len());
+            for entry in &entries {
+                println!("Log: {:?}", entry);
+            }
+        } else {
+            println!("No containers found to test log fetching");
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "requires Docker daemon"]
+    async fn test_fetch_logs_test_logger() {
+        use bollard::container::LogsOptions;
+        use futures::StreamExt;
+        
+        let client = DockerClient::from_env().await.unwrap();
+        
+        // Try to find test-logger container
+        let containers = client.list_containers(true).await.unwrap();
+        let test_logger = containers.iter().find(|c| {
+            c.names.iter().any(|n| n.contains("test-logger"))
+        });
+        
+        if let Some(container) = test_logger {
+            println!("Found test-logger: {} ({})", container.short_id, container.id);
+            
+            // Direct bollard call
+            let options = LogsOptions::<String> {
+                stdout: true,
+                stderr: true,
+                timestamps: true,
+                follow: false,
+                tail: "10".to_string(),
+                ..Default::default()
+            };
+            
+            println!("Calling logs API with options: {:?}", options);
+            let mut stream = client.inner().logs(&container.id, Some(options));
+            
+            let mut count = 0;
+            while let Some(result) = stream.next().await {
+                count += 1;
+                match result {
+                    Ok(log) => {
+                        println!("Raw log output {}: {:?}", count, log);
+                    }
+                    Err(e) => {
+                        println!("Error reading log {}: {}", count, e);
+                    }
+                }
+            }
+            println!("Total log items received: {}", count);
+            
+            // Now try our wrapper
+            let logs = client.fetch_logs(&container.id, 10).await;
+            println!("fetch_logs result: {:?}", logs);
+            if let Ok(entries) = &logs {
+                println!("fetch_logs fetched {} entries", entries.len());
+            }
+        } else {
+            println!("test-logger container not found, skipping test");
+        }
     }
 }
