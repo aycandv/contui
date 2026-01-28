@@ -51,15 +51,28 @@ Core Features (Docker Operations)
     Commit: c100105
     Notes: Split view with detail panel showing container info
 
-[ ] US-008: Container actions and keybindings
+[X] US-008: Container actions and keybindings
     Dependencies: US-006
-    Status: Not started
-    Notes:
+    Status: Complete
+    Commit: f9d929e
+    Notes: All container keyboard actions implemented with confirmation dialogs
+      - 's' Start/Stop toggle, 'r' Restart, 'p' Pause/Unpause
+      - 'k' Kill, 'd' Delete with centered confirmation popup
+      - 'l' Logs placeholder, auto-refresh every 2s, notifications with 3s timeout
 
 [ ] US-009: Image list and management
     Dependencies: US-003, US-005
-    Status: Not started
-    Notes:
+    Status: In Progress
+    Branch: ralph/US-009-image-management
+    Notes: Comprehensive image management features:
+      - Image list widget with Repository, Tag, ID, Size, Created columns
+      - Selection highlighting and keyboard navigation (↑/↓ or j/k)
+      - 'd' remove image, 'p' prune dangling images (with confirmation)
+      - 'i' inspect image showing layers and metadata
+      - Image detail panel (similar to containers)
+      - Image count and total disk usage in header
+      - Distinguish dangling images visually
+      - Auto-refresh every 2 seconds
 
 [ ] US-010: Volume and Network management
     Dependencies: US-003, US-005
@@ -151,14 +164,21 @@ Release
 
 === Stats ===
 Total Stories: 25
-Completed: 7
-In Progress: 0
-Remaining: 18
+Completed: 8
+In Progress: 1
+Remaining: 16
 
-Progress: [███░░░░░░░] 28%
+Progress: [███░░░░░░░] 32%
 
 === Recent Activity ===
 (Most recent first)
+
+- 2024-01-28: US-008 Complete - Container keyboard actions
+  Commit: f9d929e feat(US-008): implement container keyboard actions
+  - 's' Start/Stop toggle, 'r' Restart, 'p' Pause/Unpause
+  - 'k' Kill, 'd' Delete with centered confirmation dialog
+  - 'l' Logs placeholder, notifications with 3s timeout
+  - Auto-refresh every 2 seconds, 43 tests passing
 
 - 2024-01-28: US-007 Complete - Container detail panel
   Commit: c100105 feat(ui): add container detail panel with split view

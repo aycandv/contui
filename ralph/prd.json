@@ -1,6 +1,6 @@
 {
   "project": "DockMon",
-  "branchName": "ralph/dockmon-docker-tui",
+  "branchName": "ralph/US-009-image-management",
   "description": "Advanced Docker TUI in Rust - Real-time container monitoring, log aggregation, and Docker Compose management",
   "userStories": [
     {
@@ -146,26 +146,31 @@
         "Typecheck passes"
       ],
       "priority": 8,
-      "passes": false,
-      "notes": "Makes containers interactive"
+      "passes": true,
+      "notes": "Complete - All keyboard actions implemented with centered confirmation popup, notifications with 3s timeout, auto-refresh every 2s"
     },
     {
       "id": "US-009",
       "title": "Image list and management",
-      "description": "As a user, I want to view and manage Docker images.",
+      "description": "As a user, I want to view and manage Docker images including pruning and inspecting layers.",
       "acceptanceCriteria": [
-        "Implement list_images() in docker/images.rs",
+        "Implement list_images() in docker/images.rs returning Vec<ImageSummary>",
         "Create ImageList widget with columns: Repository, Tag, ID, Size, Created",
-        "Add Images tab to main navigation",
-        "Implement 'd' key to remove selected image",
-        "Implement 'p' key to prune dangling images",
-        "Show image count and total size in footer",
-        "Distinguish dangling images visually",
-        "Typecheck passes"
+        "Display image list in Images tab with selection highlighting",
+        "Implement keyboard navigation (↑/↓ or j/k) for image list",
+        "Implement 'd' key to remove selected image with confirmation",
+        "Implement 'p' key to prune dangling images with confirmation",
+        "Implement 'i' key to inspect image showing layers and metadata",
+        "Show image count and total disk usage in header",
+        "Distinguish dangling images visually (<none>:<none>)",
+        "Show image details panel: layers, size, created date, labels",
+        "Auto-refresh image list every 2 seconds",
+        "Typecheck passes",
+        "Tests pass"
       ],
       "priority": 9,
       "passes": false,
-      "notes": "Second major resource type"
+      "notes": "Comprehensive image management with prune, inspect, and details panel"
     },
     {
       "id": "US-010",
