@@ -45,10 +45,11 @@ Core Features (Docker Operations)
     Commit: d425092
     Notes: Table view with ID, Name, Image, Status, Ports columns
 
-[ ] US-007: Container detail panel
+[X] US-007: Container detail panel
     Dependencies: US-006
-    Status: Not started
-    Notes:
+    Status: Complete
+    Commit: c100105
+    Notes: Split view with detail panel showing container info
 
 [ ] US-008: Container actions and keybindings
     Dependencies: US-006
@@ -150,14 +151,21 @@ Release
 
 === Stats ===
 Total Stories: 25
-Completed: 6
+Completed: 7
 In Progress: 0
-Remaining: 19
+Remaining: 18
 
-Progress: [██▌░░░░░░░] 24%
+Progress: [███░░░░░░░] 28%
 
 === Recent Activity ===
 (Most recent first)
+
+- 2024-01-28: US-007 Complete - Container detail panel
+  Commit: c100105 feat(ui): add container detail panel with split view
+  - Split view: 60% list, 40% detail panel
+  - Shows ID, Image, Status, Ports, Mounts, Networks
+  - Action hints (s, r, p, k, d, l keys)
+  - 43 tests passing
 
 - 2024-01-28: US-006 Complete - Container list widget
   Commit: d425092 feat(ui): add container list widget with table view
@@ -165,7 +173,6 @@ Progress: [██▌░░░░░░░] 24%
   - Selection highlighting with ▶ symbol
   - Status colors (green/yellow/red)
   - ↑/↓ or j/k navigation for containers
-  - 39 tests passing
 
 - 2024-01-28: US-005 Complete - Basic TUI layout implemented
   Commit: 56e399e feat(ui): implement basic TUI layout and event loop
