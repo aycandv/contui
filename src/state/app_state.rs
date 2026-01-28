@@ -1,0 +1,170 @@
+//! Application state management
+
+use chrono::Utc;
+
+use crate::core::{
+    ConnectionInfo, ContainerSummary, ImageSummary, NetworkSummary, NotificationLevel, Tab,
+    VolumeSummary,
+};
+
+/// Main application state
+#[derive(Debug, Clone)]
+pub struct AppState {
+    // Navigation
+    pub current_tab: Tab,
+    pub previous_tab: Option<Tab>,
+    pub focused_panel: Panel,
+
+    // Docker data
+    pub containers: Vec<ContainerSummary>,
+    pub images: Vec<ImageSummary>,
+    pub volumes: Vec<VolumeSummary>,
+    pub networks: Vec<NetworkSummary>,
+
+    // Connection
+    pub docker_connected: bool,
+    pub connection_info: ConnectionInfo,
+
+    // UI state
+    pub terminal_size: (u16, u16),
+    pub show_help: bool,
+    pub notifications: Vec<Notification>,
+
+    // Async operations tracking
+    pub loading: bool,
+}
+
+/// Panel focus areas
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Panel {
+    Sidebar,
+    Main,
+}
+
+/// Notification message
+#[derive(Debug, Clone)]
+pub struct Notification {
+    pub id: uuid::Uuid,
+    pub message: String,
+    pub level: NotificationLevel,
+    pub timestamp: chrono::DateTime<chrono::Utc>,
+}
+
+impl AppState {
+    /// Create new app state
+    pub fn new() -> Self {
+        Self {
+            current_tab: Tab::Containers,
+            previous_tab: None,
+            focused_panel: Panel::Sidebar,
+            containers: vec![],
+            images: vec![],
+            volumes: vec![],
+            networks: vec![],
+            docker_connected: false,
+            connection_info: ConnectionInfo::default(),
+            terminal_size: (80, 24),
+            show_help: false,
+            notifications: vec![],
+            loading: false,
+        }
+    }
+
+    /// Add a notification
+    pub fn add_notification(&mut self, message: impl Into<String>, level: NotificationLevel) {
+        let notification = Notification {
+            id: uuid::Uuid::new_v4(),
+            message: message.into(),
+            level,
+            timestamp: Utc::now(),
+        };
+        self.notifications.push(notification);
+
+        // Keep only last 10 notifications
+        if self.notifications.len() > 10 {
+            self.notifications.remove(0);
+        }
+    }
+
+    /// Clear old notifications (older than threshold)
+    pub fn clear_old_notifications(&mut self, max_age_seconds: i64) {
+        let cutoff = Utc::now() - chrono::Duration::seconds(max_age_seconds);
+        self.notifications.retain(|n| n.timestamp > cutoff);
+    }
+
+    /// Update containers list
+    pub fn update_containers(&mut self, containers: Vec<ContainerSummary>) {
+        self.containers = containers;
+    }
+
+    /// Update images list
+    pub fn update_images(&mut self, images: Vec<ImageSummary>) {
+        self.images = images;
+    }
+
+    /// Update volumes list
+    pub fn update_volumes(&mut self, volumes: Vec<VolumeSummary>) {
+        self.volumes = volumes;
+    }
+
+    /// Update networks list
+    pub fn update_networks(&mut self, networks: Vec<NetworkSummary>) {
+        self.networks = networks;
+    }
+
+    /// Set Docker connection status
+    pub fn set_docker_connected(&mut self, connected: bool, info: ConnectionInfo) {
+        self.docker_connected = connected;
+        self.connection_info = info;
+    }
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_app_state_default() {
+        let state = AppState::default();
+        assert_eq!(state.current_tab, Tab::Containers);
+        assert!(state.containers.is_empty());
+        assert!(!state.docker_connected);
+    }
+
+    #[test]
+    fn test_add_notification() {
+        let mut state = AppState::default();
+        state.add_notification("Test message", NotificationLevel::Info);
+
+        assert_eq!(state.notifications.len(), 1);
+        assert_eq!(state.notifications[0].message, "Test message");
+    }
+
+    #[test]
+    fn test_notification_limit() {
+        let mut state = AppState::default();
+
+        // Add 15 notifications
+        for i in 0..15 {
+            state.add_notification(format!("Message {}", i), NotificationLevel::Info);
+        }
+
+        // Should only keep last 10
+        assert_eq!(state.notifications.len(), 10);
+    }
+
+    #[test]
+    fn test_update_containers() {
+        let mut state = AppState::default();
+        let containers = vec![ContainerSummary::default()];
+
+        state.update_containers(containers);
+        assert_eq!(state.containers.len(), 1);
+    }
+}

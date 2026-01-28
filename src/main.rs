@@ -72,7 +72,7 @@ async fn main() -> Result<()> {
     }
 
     // Run the TUI application
-    let mut app = App::new(config)?;
+    let mut app = App::new(config).await?;
     app.run().await?;
 
     info!("DockMon shutting down gracefully");
