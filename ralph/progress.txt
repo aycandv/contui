@@ -7,10 +7,11 @@ Started: 2024-01-28
 
 Foundation Layer (Infrastructure)
 ----------------------------------
-[ ] US-001: Project setup and dependencies
+[X] US-001: Project setup and dependencies
     Dependencies: None
-    Status: Not started
-    Notes: 
+    Status: Complete
+    Commit: e13c419
+    Notes: All acceptance criteria met - 27 tests passing 
 
 [ ] US-002: Core types and error handling
     Dependencies: US-001
