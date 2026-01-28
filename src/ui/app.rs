@@ -1,12 +1,12 @@
 //! UI Application logic
 
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use ratatui::layout::{Constraint, Direction, Layout, Margin, Rect};
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 use ratatui::Frame;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info};
 
 use crate::core::{NotificationLevel, Tab};
 use crate::state::AppState;
@@ -45,6 +45,12 @@ impl UiApp {
             return;
         }
 
+        // If help is showing, any key closes it (except when toggling help)
+        if self.state.show_help && key.code != KeyCode::Char('?') && key.code != KeyCode::Char('h') {
+            self.state.show_help = false;
+            return;
+        }
+
         // Global key handlers
         match key.code {
             // Quit
@@ -57,7 +63,7 @@ impl UiApp {
                 self.should_quit = true;
             }
 
-            // Tab switching (1-6)
+            // Tab switching with number keys
             KeyCode::Char('1') => self.switch_tab(Tab::Containers),
             KeyCode::Char('2') => self.switch_tab(Tab::Images),
             KeyCode::Char('3') => self.switch_tab(Tab::Volumes),
@@ -65,7 +71,11 @@ impl UiApp {
             KeyCode::Char('5') => self.switch_tab(Tab::Compose),
             KeyCode::Char('6') => self.switch_tab(Tab::System),
 
-            // Navigation
+            // Tab switching with arrow keys
+            KeyCode::Right | KeyCode::Down => self.next_tab(),
+            KeyCode::Left | KeyCode::Up => self.previous_tab(),
+
+            // Navigation between panels
             KeyCode::Tab => self.next_panel(),
             KeyCode::BackTab => self.previous_panel(),
 
@@ -80,15 +90,39 @@ impl UiApp {
         }
     }
 
-    /// Switch to a different tab
+    /// Switch to a specific tab
     fn switch_tab(&mut self, tab: Tab) {
-        info!("Switching to tab: {:?}", tab);
-        self.state.previous_tab = Some(self.state.current_tab);
-        self.state.current_tab = tab;
-        self.state.add_notification(
-            format!("Switched to {}", tab.name()),
-            NotificationLevel::Info,
-        );
+        if self.state.current_tab != tab {
+            info!("Switching to tab: {:?}", tab);
+            self.state.previous_tab = Some(self.state.current_tab);
+            self.state.current_tab = tab;
+        }
+    }
+
+    /// Move to next tab (circular)
+    fn next_tab(&mut self) {
+        let tabs = Tab::all();
+        let current_idx = tabs
+            .iter()
+            .position(|t| *t == self.state.current_tab)
+            .unwrap_or(0);
+        let next_idx = (current_idx + 1) % tabs.len();
+        self.switch_tab(tabs[next_idx]);
+    }
+
+    /// Move to previous tab (circular)
+    fn previous_tab(&mut self) {
+        let tabs = Tab::all();
+        let current_idx = tabs
+            .iter()
+            .position(|t| *t == self.state.current_tab)
+            .unwrap_or(0);
+        let prev_idx = if current_idx == 0 {
+            tabs.len() - 1
+        } else {
+            current_idx - 1
+        };
+        self.switch_tab(tabs[prev_idx]);
     }
 
     /// Move focus to next panel
@@ -112,7 +146,7 @@ impl UiApp {
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Length(1), // Header
-                Constraint::Min(0),    // Main content
+                Constraint::Min(3),    // Main content (at least 3 lines)
                 Constraint::Length(1), // Footer
             ])
             .split(area);
@@ -130,31 +164,49 @@ impl UiApp {
 
     /// Render the header
     fn render_header(&self, frame: &mut Frame, area: Rect) {
-        let header_text = format!(
-            " 🐳 DockMon {} | {} | {} ",
-            env!("CARGO_PKG_VERSION"),
-            self.state.current_tab.name(),
-            if self.state.docker_connected {
-                "● Connected"
-            } else {
-                "○ Disconnected"
-            }
+        let status_indicator = if self.state.docker_connected {
+            ("●", Color::Green)
+        } else {
+            ("○", Color::Red)
+        };
+
+        let header_spans = vec![
+            Span::styled(" 🐳 DockMon ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                format!("v{} ", env!("CARGO_PKG_VERSION")),
+                Style::default().fg(Color::Gray),
+            ),
+            Span::raw("| "),
+            Span::styled(
+                self.state.current_tab.name(),
+                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" | "),
+            Span::styled(status_indicator.0, Style::default().fg(status_indicator.1)),
+            Span::styled(
+                if self.state.docker_connected { " Connected " } else { " Disconnected " },
+                Style::default().fg(status_indicator.1),
+            ),
+        ];
+
+        let header = Line::from(header_spans);
+        frame.render_widget(
+            Paragraph::new(header).style(Style::default().bg(Color::Black)),
+            area,
         );
-
-        let header = Paragraph::new(header_text)
-            .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD));
-
-        frame.render_widget(header, area);
     }
 
     /// Render the main content area
     fn render_main_content(&self, frame: &mut Frame, area: Rect) {
         // Create a layout for sidebar + main panel
+        // Use min 12 chars for sidebar, max 20
+        let sidebar_width = (area.width / 5).clamp(12, 20);
+        
         let content_layout = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
-                Constraint::Length(15), // Sidebar
-                Constraint::Min(0),     // Main panel
+                Constraint::Length(sidebar_width), // Sidebar
+                Constraint::Min(0),                // Main panel
             ])
             .split(area);
 
@@ -168,7 +220,9 @@ impl UiApp {
 
         for tab in Tab::all() {
             let is_selected = self.state.current_tab == *tab;
-            let prefix = if is_selected { "▶ " } else { "  " };
+            let shortcut = tab.shortcut();
+            let name = tab.name();
+            
             let style = if is_selected {
                 Style::default()
                     .fg(Color::Green)
@@ -177,105 +231,117 @@ impl UiApp {
                 Style::default().fg(Color::Gray)
             };
 
-            lines.push(Line::from(vec![
-                Span::styled(prefix, style),
-                Span::styled(tab.name(), style),
-            ]));
+            // Format: "▶ 1:Containers" or "  2:Images"
+            let line_text = if is_selected {
+                format!("▶ {}:{}", shortcut, name)
+            } else {
+                format!("  {}:{}", shortcut, name)
+            };
+
+            lines.push(Line::from(Span::styled(line_text, style)));
         }
 
         let sidebar = Paragraph::new(Text::from(lines))
-            .block(Block::default().borders(Borders::RIGHT));
+            .block(Block::default().borders(Borders::RIGHT).border_style(Color::DarkGray));
 
         frame.render_widget(sidebar, area);
     }
 
     /// Render the main panel based on current tab
     fn render_main_panel(&self, frame: &mut Frame, area: Rect) {
+        let block = Block::default()
+            .title(self.state.current_tab.name())
+            .borders(Borders::ALL)
+            .border_style(Color::DarkGray);
+
+        let inner_area = block.inner(area);
+        frame.render_widget(block, area);
+
+        // Render content inside the block
         let content = match self.state.current_tab {
             Tab::Containers => {
+                let running = self.state
+                    .containers
+                    .iter()
+                    .filter(|c| c.state == crate::core::ContainerState::Running)
+                    .count();
+                let stopped = self.state.containers.len() - running;
+
                 format!(
-                    "Containers\n\nTotal: {}\nRunning: {}\nStopped: {}",
+                    "Total: {}\nRunning: {}\nStopped: {}",
                     self.state.containers.len(),
-                    self.state
-                        .containers
-                        .iter()
-                        .filter(|c| c.state == crate::core::ContainerState::Running)
-                        .count(),
-                    self.state
-                        .containers
-                        .iter()
-                        .filter(|c| c.state != crate::core::ContainerState::Running)
-                        .count(),
+                    running,
+                    stopped
                 )
             }
-            Tab::Images => format!("Images\n\nTotal: {}", self.state.images.len()),
-            Tab::Volumes => format!("Volumes\n\nTotal: {}", self.state.volumes.len()),
-            Tab::Networks => format!("Networks\n\nTotal: {}", self.state.networks.len()),
+            Tab::Images => format!("Total: {}", self.state.images.len()),
+            Tab::Volumes => format!("Total: {}", self.state.volumes.len()),
+            Tab::Networks => format!("Total: {}", self.state.networks.len()),
             Tab::Compose => "Docker Compose\n\nNot yet implemented".to_string(),
-            Tab::System => format!(
-                "System\n\nDocker: {}\nAPI: {}",
-                self.state.connection_info.version,
-                self.state.connection_info.api_version
-            ),
+            Tab::System => {
+                if self.state.docker_connected {
+                    format!(
+                        "Docker Version: {}\nAPI Version: {}\nOS: {}\nArch: {}",
+                        self.state.connection_info.version,
+                        self.state.connection_info.api_version,
+                        self.state.connection_info.os,
+                        self.state.connection_info.arch
+                    )
+                } else {
+                    "Not connected to Docker\n\nPlease check your Docker daemon.".to_string()
+                }
+            }
         };
 
         let paragraph = Paragraph::new(content)
-            .block(
-                Block::default()
-                    .title(self.state.current_tab.name())
-                    .borders(Borders::ALL),
-            )
             .wrap(Wrap { trim: true });
 
-        frame.render_widget(paragraph, area);
+        frame.render_widget(paragraph, inner_area);
     }
 
     /// Render the footer
     fn render_footer(&self, frame: &mut Frame, area: Rect) {
-        let help_text = "Tab: Switch | ?: Help | q: Quit";
+        let help_text = " [←/→ or 1-6]:Switch Tabs | [Tab]:Next Panel | [?]:Help | [q]:Quit ";
 
         let footer = Paragraph::new(help_text)
-            .style(Style::default().fg(Color::Gray));
+            .style(Style::default().fg(Color::Gray).bg(Color::Black));
 
         frame.render_widget(footer, area);
     }
 
     /// Render help overlay
     fn render_help_overlay(&self, frame: &mut Frame, area: Rect) {
-        // Create a centered popup
+        // Create a centered popup (60% width, 70% height)
         let popup_area = Self::centered_rect(60, 70, area);
 
         // Clear the background
         frame.render_widget(Clear, popup_area);
 
-        let help_text = r#"
-Keyboard Shortcuts
-
-Global:
-  q, Ctrl+C    Quit application
-  Tab          Next panel
-  Shift+Tab    Previous panel
-  ?            Toggle this help
+        let help_text = r#"Keyboard Shortcuts
 
 Navigation:
-  1            Containers tab
-  2            Images tab
-  3            Volumes tab
-  4            Networks tab
-  5            Compose tab
-  6            System tab
+  ← / → or ↑ / ↓    Switch between tabs (circular)
+  1 - 6             Jump directly to tab (Containers, Images, etc.)
+  Tab               Move to next panel
+  Shift+Tab         Move to previous panel
 
-Press any key to close...
+Global:
+  q                 Quit application
+  Ctrl+C            Force quit
+  ? or h            Toggle this help screen
+
+Press any key to close this help...
 "#;
 
         let help = Paragraph::new(help_text)
             .block(
                 Block::default()
-                    .title("Help")
+                    .title(" Help (Press any key to close) ")
                     .borders(Borders::ALL)
                     .border_style(Style::default().fg(Color::Yellow)),
             )
-            .style(Style::default().fg(Color::White));
+            .style(Style::default().fg(Color::White))
+            .wrap(Wrap { trim: true });
 
         frame.render_widget(help, popup_area);
     }
@@ -334,7 +400,7 @@ mod tests {
     }
 
     #[test]
-    fn test_tab_switching() {
+    fn test_tab_switching_numbers() {
         let state = AppState::default();
         let mut app = UiApp::new(state);
 
@@ -345,6 +411,48 @@ mod tests {
 
         app.handle_key_event(KeyEvent::from(KeyCode::Char('1')));
         assert_eq!(app.state.current_tab, Tab::Containers);
+    }
+
+    #[test]
+    fn test_tab_switching_arrows() {
+        let state = AppState::default();
+        let mut app = UiApp::new(state);
+
+        assert_eq!(app.state.current_tab, Tab::Containers);
+
+        // Right arrow should go to Images
+        app.handle_key_event(KeyEvent::from(KeyCode::Right));
+        assert_eq!(app.state.current_tab, Tab::Images);
+
+        // Right arrow should go to Volumes
+        app.handle_key_event(KeyEvent::from(KeyCode::Right));
+        assert_eq!(app.state.current_tab, Tab::Volumes);
+
+        // Left arrow should go back to Images
+        app.handle_key_event(KeyEvent::from(KeyCode::Left));
+        assert_eq!(app.state.current_tab, Tab::Images);
+
+        // Left arrow should go back to Containers
+        app.handle_key_event(KeyEvent::from(KeyCode::Left));
+        assert_eq!(app.state.current_tab, Tab::Containers);
+
+        // Left arrow should wrap to System (last tab)
+        app.handle_key_event(KeyEvent::from(KeyCode::Left));
+        assert_eq!(app.state.current_tab, Tab::System);
+    }
+
+    #[test]
+    fn test_help_toggle() {
+        let state = AppState::default();
+        let mut app = UiApp::new(state);
+
+        assert!(!app.state.show_help);
+
+        app.handle_key_event(KeyEvent::from(KeyCode::Char('?')));
+        assert!(app.state.show_help);
+
+        app.handle_key_event(KeyEvent::from(KeyCode::Char('?')));
+        assert!(!app.state.show_help);
     }
 
     #[test]

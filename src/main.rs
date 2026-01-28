@@ -21,7 +21,7 @@ struct Cli {
     #[arg(short = 'H', long, value_name = "HOST")]
     host: Option<String>,
 
-    /// Enable debug logging
+    /// Enable debug logging to file
     #[arg(short, long)]
     debug: bool,
 
@@ -34,16 +34,31 @@ struct Cli {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    // Initialize logging
+    // Initialize logging (file only, not stdout to avoid polluting TUI)
     let log_level = if cli.debug {
         "debug"
     } else {
         &cli.log_level
     };
     
-    tracing_subscriber::fmt()
-        .with_env_filter(format!("dockmon={}", log_level))
-        .init();
+    // Write logs to file instead of stdout
+    let log_file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("/tmp/dockmon.log")
+        .ok();
+    
+    if let Some(file) = log_file {
+        tracing_subscriber::fmt()
+            .with_env_filter(format!("dockmon={}", log_level))
+            .with_writer(std::sync::Arc::new(file))
+            .init();
+    } else {
+        // If can't open log file, disable logging
+        tracing_subscriber::fmt()
+            .with_env_filter("off")
+            .init();
+    }
 
     info!("Starting DockMon v{}", env!("CARGO_PKG_VERSION"));
 
