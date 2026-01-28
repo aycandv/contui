@@ -1,7 +1,7 @@
 //! Container list widget
 
 use ratatui::{
-    layout::{Constraint, Rect},
+    layout::Constraint,
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Row, Table, TableState},

@@ -238,7 +238,42 @@ impl UiApp {
             .split(area);
 
         self.render_sidebar(frame, content_layout[0]);
-        self.render_main_panel(frame, content_layout[1]);
+        
+        // For Containers tab with containers available, use split view
+        if self.state.current_tab == Tab::Containers && !self.state.containers.is_empty() {
+            self.render_containers_split_view(frame, content_layout[1]);
+        } else {
+            self.render_main_panel(frame, content_layout[1]);
+        }
+    }
+
+    /// Render containers in split view (list | detail)
+    fn render_containers_split_view(&self, frame: &mut Frame, area: Rect) {
+        use crate::ui::components::{ContainerDetailPanel, SplitLayout};
+
+        // Split area: 60% for list, 40% for detail
+        let (list_area, detail_area) = SplitLayout::horizontal_split(area, 60);
+
+        // Create container list
+        let mut widget = ContainerListWidget::new(self.state.containers.clone());
+        if !self.state.containers.is_empty() {
+            widget.set_selected(Some(self.state.container_list_selected));
+        }
+        let table = widget.build_table();
+        let mut table_state = ratatui::widgets::TableState::default();
+        table_state.select(Some(self.state.container_list_selected));
+        frame.render_stateful_widget(table, list_area, &mut table_state);
+
+        // Render detail panel for selected container
+        if let Some(container) = self.state.containers.get(self.state.container_list_selected) {
+            let detail = ContainerDetailPanel::draw(container);
+            frame.render_widget(detail, detail_area);
+        } else {
+            // Empty state
+            let empty = Paragraph::new("No container selected")
+                .block(Block::default().borders(Borders::ALL));
+            frame.render_widget(empty, detail_area);
+        }
     }
 
     /// Render the sidebar with tabs
@@ -276,23 +311,12 @@ impl UiApp {
 
     /// Render the main panel based on current tab
     fn render_main_panel(&self, frame: &mut Frame, area: Rect) {
-        match self.state.current_tab {
-            Tab::Containers => self.render_containers_tab(frame, area),
-            _ => self.render_simple_tab(frame, area),
+        // Containers tab is handled by render_containers_split_view
+        // when there are containers, otherwise fall through to simple view
+        if self.state.current_tab == Tab::Containers && !self.state.containers.is_empty() {
+            return;
         }
-    }
-
-    /// Render the containers tab with table
-    fn render_containers_tab(&self, frame: &mut Frame, area: Rect) {
-        // Create a local TableState that we'll use for rendering
-        let mut table_state = ratatui::widgets::TableState::default();
-        if !self.state.containers.is_empty() {
-            table_state.select(Some(self.state.container_list_selected));
-        }
-        
-        let widget = ContainerListWidget::new(self.state.containers.clone());
-        let table = widget.build_table();
-        frame.render_stateful_widget(table, area, &mut table_state);
+        self.render_simple_tab(frame, area);
     }
 
     /// Render simple tabs (Images, Volumes, etc.)
@@ -323,7 +347,10 @@ impl UiApp {
                     "Not connected to Docker\n\nPlease check your Docker daemon.".to_string()
                 }
             }
-            Tab::Containers => unreachable!(),
+            Tab::Containers => {
+                // This should only happen when containers list is empty
+                "No containers found.\n\nDocker may not be running or you may not have permissions.".to_string()
+            }
         };
 
         let paragraph = Paragraph::new(content)
@@ -335,7 +362,7 @@ impl UiApp {
     /// Render the footer
     fn render_footer(&self, frame: &mut Frame, area: Rect) {
         let help_text = if self.state.current_tab == Tab::Containers && !self.state.containers.is_empty() {
-            " [←/→]:Tabs | [↑/↓ or j/k]:Select | [?]:Help | [q]:Quit "
+            " [←/→]:Tabs | [↑/↓]:Select Container | [s]Start [r]Restart [d]Delete | [?]:Help [q]:Quit "
         } else {
             " [←/→ or 1-6]:Switch Tabs | [?]:Help | [q]:Quit "
         };
@@ -364,6 +391,12 @@ Navigation:
 
 Containers Tab:
   ↑ / ↓ or j / k    Select container in list
+  s                 Start/Stop selected container
+  r                 Restart selected container
+  p                 Pause/Unpause selected container
+  k                 Kill selected container
+  d                 Delete selected container
+  l                 View container logs
 
 Global:
   q                 Quit application
