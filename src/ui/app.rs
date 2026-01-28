@@ -307,7 +307,35 @@ impl UiApp {
                 self.state.hide_log_search();
                 UiAction::None
             }
-            _ => UiAction::None, // TODO: Handle character input for search
+            KeyCode::Backspace => {
+                // Remove last character from search pattern
+                if let Some(ref mut log_view) = self.state.log_view {
+                    if let Some(ref pattern) = log_view.search_pattern {
+                        let new_pattern: String = pattern.chars().take(pattern.len().saturating_sub(1)).collect();
+                        if new_pattern.is_empty() {
+                            self.state.clear_log_search();
+                        } else {
+                            self.state.set_log_search(&new_pattern);
+                        }
+                    }
+                }
+                UiAction::None
+            }
+            KeyCode::Char(c) => {
+                // Add character to search pattern
+                let new_pattern = if let Some(ref log_view) = self.state.log_view {
+                    if let Some(ref pattern) = log_view.search_pattern {
+                        format!("{}{}", pattern, c)
+                    } else {
+                        c.to_string()
+                    }
+                } else {
+                    c.to_string()
+                };
+                self.state.set_log_search(&new_pattern);
+                UiAction::None
+            }
+            _ => UiAction::None,
         }
     }
 
@@ -955,6 +983,8 @@ Log View:
   ↑/↓ or PgUp/PgDn Scroll
   r                Refresh logs
   f                Toggle follow mode
+  /                Search logs
+  n/N              Next/previous match
   Home/End         Jump to top/bottom
   q or Esc         Close log view
 

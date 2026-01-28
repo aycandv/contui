@@ -2,13 +2,32 @@
 
 ## Status
 - Total Stories: 4
-- Completed: 0
+- Completed: 0 (US-013-1 partially done - state management complete, UI rendering needed)
 - Current Story: US-013-1
 
 ## Completed Stories
-None yet.
+None fully complete yet.
+
+## US-013-1 Partial Implementation
+**DONE:**
+- Added search fields to LogViewState (search_pattern, search_matches, current_match, show_search_input)
+- Added search state management methods to AppState
+- Added keybindings: '/' to open search, 'n'/'N' for navigation, 'Esc' to close
+- Added handle_log_search_key method skeleton
+
+**REMAINING for Ralph:**
+1. Render search input field at bottom of log view when show_search_input is true
+2. Handle character input for typing search pattern (update search as user types)
+3. Highlight matching log lines in render_log_viewer
+4. Show match count indicator (e.g., "3/15")
+5. Ensure search pattern is applied to newly added logs
+
+## Key Files to Modify
+- src/ui/components/log_viewer.rs - Add search input rendering and match highlighting
+- src/ui/app.rs - Complete handle_log_search_key for character input
 
 ## Notes
-- Building on existing log view from US-011
-- Search should work with regex
-- Highlighting should be efficient for large log buffers
+- Search is case-insensitive substring match (not regex yet)
+- matches are stored as indices into logs Vec
+- current_match is index into matches Vec
+- When follow mode is enabled and search is opened, follow is disabled

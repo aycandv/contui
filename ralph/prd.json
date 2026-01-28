@@ -10,16 +10,17 @@
       "acceptanceCriteria": [
         "Press '/' in log view to open search input (like vim)",
         "Search input appears at bottom of log view",
-        "Type regex pattern and press Enter to search",
+        "Type pattern and press Enter to search (case-insensitive)",
         "Matching lines are highlighted in yellow",
         "Press 'n' to jump to next match, 'N' for previous",
-        "Press 'Esc' to clear search",
-        "Search is case-insensitive by default",
+        "Press 'Esc' to clear search and close input",
+        "Show match counter: '3/15' in search bar",
+        "Search updates as new logs arrive",
         "Typecheck passes"
       ],
       "priority": 1,
       "passes": false,
-      "notes": ""
+      "notes": "State management done. Ralph: implement search input rendering, character input handling, match highlighting."
     },
     {
       "id": "US-013-2",
