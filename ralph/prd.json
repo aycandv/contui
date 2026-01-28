@@ -1,6 +1,6 @@
 {
   "project": "DockMon",
-  "branchName": "ralph/US-010-volumes-networks",
+  "branchName": "ralph/US-011-realtime-logs",
   "description": "Advanced Docker TUI in Rust - Real-time container monitoring, log aggregation, and Docker Compose management",
   "userStories": [
     {
@@ -174,19 +174,25 @@
     {
       "id": "US-010",
       "title": "Volume and Network management",
-      "description": "As a user, I want to view and manage Docker volumes and networks.",
+      "description": "As a user, I want to view and manage Docker volumes and networks with list widgets and pruning.",
       "acceptanceCriteria": [
-        "Implement list_volumes(), list_networks() in docker module",
-        "Create VolumeList and NetworkList widgets",
-        "Add Volumes and Networks tabs",
-        "Display volume size and mountpoint",
-        "Display network driver, subnet, connected containers",
-        "Implement prune operations for volumes and networks",
-        "Typecheck passes"
+        "Implement list_volumes() in docker/volumes.rs returning Vec<VolumeSummary>",
+        "Implement list_networks() in docker/networks.rs returning Vec<NetworkSummary>",
+        "Create VolumeList widget with columns: Name, Driver, Size, Mountpoint",
+        "Create NetworkList widget with columns: Name, Driver, Scope, Subnet",
+        "Display volume list in Volumes tab with selection and navigation",
+        "Display network list in Networks tab with selection and navigation",
+        "Implement 'd' key to remove selected volume/network with confirmation",
+        "Implement 'p' key to prune unused volumes/networks with confirmation",
+        "Show volume/network count in header",
+        "Distinguish unused volumes visually",
+        "Auto-refresh every 2 seconds",
+        "Typecheck passes",
+        "Tests pass"
       ],
       "priority": 10,
       "passes": false,
-      "notes": "Additional resource management"
+      "notes": "Volume and Network list widgets with delete/prune operations"
     },
     {
       "id": "US-011",

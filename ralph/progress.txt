@@ -76,8 +76,13 @@ Core Features (Docker Operations)
 
 [ ] US-010: Volume and Network management
     Dependencies: US-003, US-005
-    Status: Not started
-    Notes:
+    Status: In Progress
+    Branch: ralph/US-010-volumes-networks
+    Notes: Volume and Network list widgets:
+      - VolumeList: Name, Driver, Size, Mountpoint columns
+      - NetworkList: Name, Driver, Scope, Subnet columns
+      - 'd' delete, 'p' prune operations with confirmation
+      - Selection, navigation, auto-refresh every 2s
 
 Advanced Features (Logs & Monitoring)
 --------------------------------------
