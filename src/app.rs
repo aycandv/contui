@@ -134,15 +134,9 @@ impl App {
                 ui_state.volumes = self.state.volumes.clone();
                 ui_state.networks = self.state.networks.clone();
                 
-                // Sync log_view: prefer App's state (which may have been updated by action handler)
-                // If App has log_view, use it (logs were fetched)
-                // If App's log_view is None but UI has it, user just closed it - keep None
-                if self.state.log_view.is_some() {
-                    ui_state.log_view = self.state.log_view.clone();
-                } else if ui_state.log_view.is_some() {
-                    // App doesn't have log_view but UI does - user just closed it
-                    ui_state.log_view = None;
-                }
+                // Sync log_view and test flag: prefer App's state (which may have been updated by action handler)
+                ui_state.log_view = self.state.log_view.clone();
+                ui_state.test_log_view_flag = self.state.test_log_view_flag;
                 
                 self.state = ui_state;
 
