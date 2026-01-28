@@ -130,14 +130,15 @@ impl App {
                 ui_state.volumes = self.state.volumes.clone();
                 ui_state.networks = self.state.networks.clone();
                 
-                // For log_view: if UI has it open and App has fetched logs, merge them
-                // If UI closed it (None), keep it closed
-                if ui_state.log_view.is_some() && self.state.log_view.is_some() {
-                    // Both have log view open - use App's logs (which were fetched)
+                // Sync log_view: prefer App's state (which may have been updated by action handler)
+                // If App has log_view, use it (logs were fetched)
+                // If App's log_view is None but UI has it, user just closed it - keep None
+                if self.state.log_view.is_some() {
                     ui_state.log_view = self.state.log_view.clone();
+                } else if ui_state.log_view.is_some() {
+                    // App doesn't have log_view but UI does - user just closed it
+                    ui_state.log_view = None;
                 }
-                // If ui_state.log_view is None (user closed it), keep it None
-                // If self.state.log_view is None but ui_state has it, user just opened it - keep ui_state
                 
                 self.state = ui_state;
 
@@ -198,6 +199,7 @@ impl App {
                     if let Some(container) = self.state.containers.get(self.state.container_list_selected) {
                         let name = container.names.first().cloned().unwrap_or_else(|| container.short_id.clone());
                         self.state.open_log_view(id.clone(), name);
+                        self.state.add_notification("Loading logs...", NotificationLevel::Info);
                     }
                 }
                 // Start log streaming
