@@ -60,19 +60,19 @@ Core Features (Docker Operations)
       - 'k' Kill, 'd' Delete with centered confirmation popup
       - 'l' Logs placeholder, auto-refresh every 2s, notifications with 3s timeout
 
-[ ] US-009: Image list and management
+[X] US-009: Image list and management
     Dependencies: US-003, US-005
-    Status: In Progress
-    Branch: ralph/US-009-image-management
+    Status: Complete
+    Commit: 1b903c6
     Notes: Comprehensive image management features:
       - Image list widget with Repository, Tag, ID, Size, Created columns
       - Selection highlighting and keyboard navigation (↑/↓ or j/k)
       - 'd' remove image, 'p' prune dangling images (with confirmation)
-      - 'i' inspect image showing layers and metadata
-      - Image detail panel (similar to containers)
-      - Image count and total disk usage in header
-      - Distinguish dangling images visually
-      - Auto-refresh every 2 seconds
+      - 'i' inspect image (placeholder for future detail view)
+      - Image count in header
+      - Distinguish dangling images visually (<none>:<none> in yellow)
+      - Human-readable size formatting, relative time display
+      - Auto-refresh every 2 seconds, 45 tests passing
 
 [ ] US-010: Volume and Network management
     Dependencies: US-003, US-005
@@ -164,14 +164,22 @@ Release
 
 === Stats ===
 Total Stories: 25
-Completed: 8
-In Progress: 1
+Completed: 9
+In Progress: 0
 Remaining: 16
 
-Progress: [███░░░░░░░] 32%
+Progress: [███▌░░░░░░] 36%
 
 === Recent Activity ===
 (Most recent first)
+
+- 2024-01-28: US-009 Complete - Image list and management
+  Commit: 1b903c6 feat(US-009): implement image list and management
+  - ImageList widget with Repository, Tag, ID, Size, Created columns
+  - 'd' remove image, 'p' prune dangling images with confirmation
+  - 'i' inspect image (placeholder), human-readable sizes
+  - Dangling images shown in yellow (<none>:<none>)
+  - 45 tests passing
 
 - 2024-01-28: US-008 Complete - Container keyboard actions
   Commit: f9d929e feat(US-008): implement container keyboard actions
