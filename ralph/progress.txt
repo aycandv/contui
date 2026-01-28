@@ -90,8 +90,15 @@ Advanced Features (Logs & Monitoring)
 --------------------------------------
 [ ] US-011: Real-time log streaming
     Dependencies: US-006
-    Status: Not started
-    Notes:
+    Status: In Progress
+    Branch: ralph/US-011-log-streaming
+    Notes: Real-time log streaming features:
+      - stream_logs() using bollard logs API
+      - LogViewer widget with timestamps
+      - Color-code stdout (white) vs stderr (red)
+      - 'f' toggle follow mode, auto-scroll when following
+      - Arrow keys/PgUp/PgDn for scrolling
+      - 'q' or Esc to exit log view
 
 [ ] US-012: Log search and filtering
     Dependencies: US-011
