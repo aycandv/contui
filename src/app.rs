@@ -198,6 +198,18 @@ impl App {
                 info!("Image inspect not yet implemented");
                 self.state.add_notification("Image inspect not yet implemented", NotificationLevel::Warning);
             }
+            UiAction::RemoveVolume(name) => {
+                self.remove_volume(&name).await;
+            }
+            UiAction::PruneVolumes => {
+                self.prune_volumes().await;
+            }
+            UiAction::RemoveNetwork(id) => {
+                self.remove_network(&id).await;
+            }
+            UiAction::PruneNetworks => {
+                self.prune_networks().await;
+            }
         }
     }
 
@@ -354,7 +366,27 @@ impl App {
                 }
             }
 
-            // TODO: Load volumes, networks (future stories)
+            // Fetch volumes
+            match client.list_volumes().await {
+                Ok(volumes) => {
+                    self.state.update_volumes(volumes);
+                    debug!("Loaded {} volumes", self.state.volumes.len());
+                }
+                Err(e) => {
+                    warn!("Failed to load volumes: {}", e);
+                }
+            }
+
+            // Fetch networks
+            match client.list_networks().await {
+                Ok(networks) => {
+                    self.state.update_networks(networks);
+                    debug!("Loaded {} networks", self.state.networks.len());
+                }
+                Err(e) => {
+                    warn!("Failed to load networks: {}", e);
+                }
+            }
         }
     }
 
@@ -390,6 +422,79 @@ impl App {
                 Err(e) => {
                     error!("Failed to prune images: {}", e);
                     self.state.add_notification(format!("Failed to prune images: {}", e), NotificationLevel::Error);
+                }
+            }
+        }
+    }
+
+    /// Remove a volume
+    async fn remove_volume(&mut self, name: &str) {
+        if let Some(client) = &self.docker_client {
+            info!("Removing volume {}", name);
+            match client.remove_volume(name, false).await {
+                Ok(_) => {
+                    info!("Volume {} removed", name);
+                    self.state.add_notification("Volume removed", NotificationLevel::Success);
+                    self.refresh_data().await;
+                }
+                Err(e) => {
+                    error!("Failed to remove volume {}: {}", name, e);
+                    self.state.add_notification(format!("Failed to remove volume: {}", e), NotificationLevel::Error);
+                }
+            }
+        }
+    }
+
+    /// Prune unused volumes
+    async fn prune_volumes(&mut self) {
+        if let Some(client) = &self.docker_client {
+            info!("Pruning volumes");
+            match client.prune_volumes().await {
+                Ok(reclaimed) => {
+                    let size_str = format_size(reclaimed);
+                    info!("Pruned volumes, reclaimed {}", size_str);
+                    self.state.add_notification(format!("Pruned volumes, reclaimed {}", size_str), NotificationLevel::Success);
+                    self.refresh_data().await;
+                }
+                Err(e) => {
+                    error!("Failed to prune volumes: {}", e);
+                    self.state.add_notification(format!("Failed to prune volumes: {}", e), NotificationLevel::Error);
+                }
+            }
+        }
+    }
+
+    /// Remove a network
+    async fn remove_network(&mut self, id: &str) {
+        if let Some(client) = &self.docker_client {
+            info!("Removing network {}", id);
+            match client.remove_network(id).await {
+                Ok(_) => {
+                    info!("Network {} removed", id);
+                    self.state.add_notification("Network removed", NotificationLevel::Success);
+                    self.refresh_data().await;
+                }
+                Err(e) => {
+                    error!("Failed to remove network {}: {}", id, e);
+                    self.state.add_notification(format!("Failed to remove network: {}", e), NotificationLevel::Error);
+                }
+            }
+        }
+    }
+
+    /// Prune unused networks
+    async fn prune_networks(&mut self) {
+        if let Some(client) = &self.docker_client {
+            info!("Pruning networks");
+            match client.prune_networks().await {
+                Ok(count) => {
+                    info!("Pruned {} networks", count);
+                    self.state.add_notification(format!("Pruned {} networks", count), NotificationLevel::Success);
+                    self.refresh_data().await;
+                }
+                Err(e) => {
+                    error!("Failed to prune networks: {}", e);
+                    self.state.add_notification(format!("Failed to prune networks: {}", e), NotificationLevel::Error);
                 }
             }
         }

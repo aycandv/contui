@@ -23,7 +23,11 @@ pub struct AppState {
     pub selected_image: Option<String>,
     pub image_list_selected: usize,
     pub volumes: Vec<VolumeSummary>,
+    pub selected_volume: Option<String>,
+    pub volume_list_selected: usize,
     pub networks: Vec<NetworkSummary>,
+    pub selected_network: Option<String>,
+    pub network_list_selected: usize,
 
     // Connection
     pub docker_connected: bool,
@@ -69,7 +73,11 @@ impl AppState {
             selected_image: None,
             image_list_selected: 0,
             volumes: vec![],
+            selected_volume: None,
+            volume_list_selected: 0,
             networks: vec![],
+            selected_network: None,
+            network_list_selected: 0,
             docker_connected: false,
             connection_info: ConnectionInfo::default(),
             terminal_size: (80, 24),
@@ -193,11 +201,89 @@ impl AppState {
     /// Update volumes list
     pub fn update_volumes(&mut self, volumes: Vec<VolumeSummary>) {
         self.volumes = volumes;
+        // Adjust selection if needed
+        if !self.volumes.is_empty() {
+            if self.volume_list_selected >= self.volumes.len() {
+                self.volume_list_selected = self.volumes.len() - 1;
+            }
+            self.selected_volume = Some(
+                self.volumes[self.volume_list_selected].name.clone()
+            );
+        } else {
+            self.volume_list_selected = 0;
+            self.selected_volume = None;
+        }
+    }
+
+    /// Navigate to next volume in list
+    pub fn next_volume(&mut self) {
+        if self.volumes.is_empty() {
+            return;
+        }
+        self.volume_list_selected = 
+            (self.volume_list_selected + 1) % self.volumes.len();
+        self.selected_volume = Some(
+            self.volumes[self.volume_list_selected].name.clone()
+        );
+    }
+
+    /// Navigate to previous volume in list
+    pub fn previous_volume(&mut self) {
+        if self.volumes.is_empty() {
+            return;
+        }
+        if self.volume_list_selected == 0 {
+            self.volume_list_selected = self.volumes.len() - 1;
+        } else {
+            self.volume_list_selected -= 1;
+        }
+        self.selected_volume = Some(
+            self.volumes[self.volume_list_selected].name.clone()
+        );
     }
 
     /// Update networks list
     pub fn update_networks(&mut self, networks: Vec<NetworkSummary>) {
         self.networks = networks;
+        // Adjust selection if needed
+        if !self.networks.is_empty() {
+            if self.network_list_selected >= self.networks.len() {
+                self.network_list_selected = self.networks.len() - 1;
+            }
+            self.selected_network = Some(
+                self.networks[self.network_list_selected].id.clone()
+            );
+        } else {
+            self.network_list_selected = 0;
+            self.selected_network = None;
+        }
+    }
+
+    /// Navigate to next network in list
+    pub fn next_network(&mut self) {
+        if self.networks.is_empty() {
+            return;
+        }
+        self.network_list_selected = 
+            (self.network_list_selected + 1) % self.networks.len();
+        self.selected_network = Some(
+            self.networks[self.network_list_selected].id.clone()
+        );
+    }
+
+    /// Navigate to previous network in list
+    pub fn previous_network(&mut self) {
+        if self.networks.is_empty() {
+            return;
+        }
+        if self.network_list_selected == 0 {
+            self.network_list_selected = self.networks.len() - 1;
+        } else {
+            self.network_list_selected -= 1;
+        }
+        self.selected_network = Some(
+            self.networks[self.network_list_selected].id.clone()
+        );
     }
 
     /// Set Docker connection status

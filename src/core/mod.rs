@@ -235,6 +235,14 @@ pub enum UiAction {
     PruneImages,
     /// Inspect an image
     InspectImage(String),
+    /// Remove a volume
+    RemoveVolume(String),
+    /// Prune unused volumes
+    PruneVolumes,
+    /// Remove a network
+    RemoveNetwork(String),
+    /// Prune unused networks
+    PruneNetworks,
 }
 
 /// Confirmation dialog action

@@ -121,11 +121,29 @@ impl UiApp {
                 self.handle_image_inspect_action()
             }
 
-            // List navigation (when on Containers or Images tab)
+            // Volume actions (when on Volumes tab)
+            KeyCode::Char('d') if self.state.current_tab == Tab::Volumes => {
+                self.handle_volume_remove_action()
+            }
+            KeyCode::Char('p') if self.state.current_tab == Tab::Volumes => {
+                self.handle_volume_prune_action()
+            }
+
+            // Network actions (when on Networks tab)
+            KeyCode::Char('d') if self.state.current_tab == Tab::Networks => {
+                self.handle_network_remove_action()
+            }
+            KeyCode::Char('p') if self.state.current_tab == Tab::Networks => {
+                self.handle_network_prune_action()
+            }
+
+            // List navigation
             KeyCode::Char('j') => {
                 match self.state.current_tab {
                     Tab::Containers => self.state.next_container(),
                     Tab::Images => self.state.next_image(),
+                    Tab::Volumes => self.state.next_volume(),
+                    Tab::Networks => self.state.next_network(),
                     _ => {}
                 }
                 UiAction::None
@@ -134,6 +152,8 @@ impl UiApp {
                 match self.state.current_tab {
                     Tab::Containers => self.state.previous_container(),
                     Tab::Images => self.state.previous_image(),
+                    Tab::Volumes => self.state.previous_volume(),
+                    Tab::Networks => self.state.previous_network(),
                     _ => {}
                 }
                 UiAction::None
@@ -142,6 +162,8 @@ impl UiApp {
                 match self.state.current_tab {
                     Tab::Containers => self.state.previous_container(),
                     Tab::Images => self.state.previous_image(),
+                    Tab::Volumes => self.state.previous_volume(),
+                    Tab::Networks => self.state.previous_network(),
                     _ => self.previous_tab(),
                 }
                 UiAction::None
@@ -150,6 +172,8 @@ impl UiApp {
                 match self.state.current_tab {
                     Tab::Containers => self.state.next_container(),
                     Tab::Images => self.state.next_image(),
+                    Tab::Volumes => self.state.next_volume(),
+                    Tab::Networks => self.state.next_network(),
                     _ => self.next_tab(),
                 }
                 UiAction::None
@@ -313,6 +337,51 @@ impl UiApp {
         } else {
             UiAction::None
         }
+    }
+
+    /// Handle volume remove action (with confirmation)
+    fn handle_volume_remove_action(&mut self) -> UiAction {
+        if let Some(volume) = self.state.volumes.get(self.state.volume_list_selected) {
+            let name = volume.name.clone();
+            
+            self.state.confirm_dialog = Some(ConfirmAction {
+                message: format!("Remove volume '{}'", name),
+                action: UiAction::RemoveVolume(name),
+            });
+        }
+        UiAction::None
+    }
+
+    /// Handle volume prune action (with confirmation)
+    fn handle_volume_prune_action(&mut self) -> UiAction {
+        self.state.confirm_dialog = Some(ConfirmAction {
+            message: "Remove all unused volumes?".to_string(),
+            action: UiAction::PruneVolumes,
+        });
+        UiAction::None
+    }
+
+    /// Handle network remove action (with confirmation)
+    fn handle_network_remove_action(&mut self) -> UiAction {
+        if let Some(network) = self.state.networks.get(self.state.network_list_selected) {
+            let name = network.name.clone();
+            let id = network.id.clone();
+            
+            self.state.confirm_dialog = Some(ConfirmAction {
+                message: format!("Remove network '{}'", name),
+                action: UiAction::RemoveNetwork(id),
+            });
+        }
+        UiAction::None
+    }
+
+    /// Handle network prune action (with confirmation)
+    fn handle_network_prune_action(&mut self) -> UiAction {
+        self.state.confirm_dialog = Some(ConfirmAction {
+            message: "Remove all unused networks?".to_string(),
+            action: UiAction::PruneNetworks,
+        });
+        UiAction::None
     }
 
     /// Switch to a specific tab
@@ -544,10 +613,40 @@ impl UiApp {
             Tab::Images if !self.state.images.is_empty() => {
                 self.render_images_view(frame, content_layout[1]);
             }
+            Tab::Volumes if !self.state.volumes.is_empty() => {
+                self.render_volumes_view(frame, content_layout[1]);
+            }
+            Tab::Networks if !self.state.networks.is_empty() => {
+                self.render_networks_view(frame, content_layout[1]);
+            }
             _ => {
                 self.render_main_panel(frame, content_layout[1]);
             }
         }
+    }
+
+    /// Render volumes view
+    fn render_volumes_view(&self, frame: &mut Frame, area: Rect) {
+        let mut widget = crate::ui::components::VolumeListWidget::new(self.state.volumes.clone());
+        if !self.state.volumes.is_empty() {
+            widget.set_selected(Some(self.state.volume_list_selected));
+        }
+        let table = widget.build_table();
+        let mut table_state = ratatui::widgets::TableState::default();
+        table_state.select(Some(self.state.volume_list_selected));
+        frame.render_stateful_widget(table, area, &mut table_state);
+    }
+
+    /// Render networks view
+    fn render_networks_view(&self, frame: &mut Frame, area: Rect) {
+        let mut widget = crate::ui::components::NetworkListWidget::new(self.state.networks.clone());
+        if !self.state.networks.is_empty() {
+            widget.set_selected(Some(self.state.network_list_selected));
+        }
+        let table = widget.build_table();
+        let mut table_state = ratatui::widgets::TableState::default();
+        table_state.select(Some(self.state.network_list_selected));
+        frame.render_stateful_widget(table, area, &mut table_state);
     }
 
     /// Render images view
@@ -685,6 +784,10 @@ impl UiApp {
             Cow::Borrowed(" [↑/↓]Select [s]Start [p]Pause [r]Restart [k]Kill [d]Delete [l]Logs [?]Help [q]Quit ")
         } else if self.state.current_tab == Tab::Images && !self.state.images.is_empty() {
             Cow::Borrowed(" [↑/↓]Select [d]Delete [p]Prune [i]Inspect [?]Help [q]Quit ")
+        } else if self.state.current_tab == Tab::Volumes && !self.state.volumes.is_empty() {
+            Cow::Borrowed(" [↑/↓]Select [d]Delete [p]Prune [?]Help [q]Quit ")
+        } else if self.state.current_tab == Tab::Networks && !self.state.networks.is_empty() {
+            Cow::Borrowed(" [↑/↓]Select [d]Delete [p]Prune [?]Help [q]Quit ")
         } else {
             Cow::Borrowed(" [←/→ or 1-6]:Switch Tabs | [?]:Help | [q]:Quit ")
         };
@@ -727,6 +830,16 @@ Images Tab:
   d                Delete image
   p                Prune dangling images
   i                Inspect image
+
+Volumes Tab:
+  ↑/↓ or j/k       Select volume
+  d                Delete volume
+  p                Prune unused volumes
+
+Networks Tab:
+  ↑/↓ or j/k       Select network
+  d                Delete network
+  p                Prune unused networks
 
 Global:
   q or Ctrl+C      Quit
