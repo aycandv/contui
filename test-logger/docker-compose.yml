@@ -1,0 +1,9 @@
+version: '3.8'
+
+services:
+  test-logger:
+    build: .
+    image: test-logger:latest
+    container_name: test-logger
+    # Keep the container running
+    restart: unless-stopped
