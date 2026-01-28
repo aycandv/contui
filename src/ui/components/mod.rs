@@ -3,6 +3,7 @@
 pub mod container_list;
 pub mod detail_panel;
 pub mod image_list;
+pub mod log_viewer;
 pub mod network_list;
 pub mod volume_list;
 

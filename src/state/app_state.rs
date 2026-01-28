@@ -39,8 +39,22 @@ pub struct AppState {
     pub notifications: Vec<Notification>,
     pub confirm_dialog: Option<ConfirmAction>,
 
+    // Log view state
+    pub log_view: Option<LogViewState>,
+
     // Async operations tracking
     pub loading: bool,
+}
+
+/// Log view state
+#[derive(Debug, Clone)]
+pub struct LogViewState {
+    pub container_id: String,
+    pub container_name: String,
+    pub logs: Vec<crate::docker::LogEntry>,
+    pub scroll_offset: usize,
+    pub follow: bool,
+    pub max_lines: usize,
 }
 
 /// Panel focus areas
@@ -83,6 +97,7 @@ impl AppState {
             terminal_size: (80, 24),
             show_help: false,
             notifications: vec![],
+            log_view: None,
             confirm_dialog: None,
             loading: false,
         }
@@ -290,6 +305,72 @@ impl AppState {
     pub fn set_docker_connected(&mut self, connected: bool, info: ConnectionInfo) {
         self.docker_connected = connected;
         self.connection_info = info;
+    }
+
+    /// Open log view for a container
+    pub fn open_log_view(&mut self, container_id: String, container_name: String) {
+        self.log_view = Some(LogViewState {
+            container_id,
+            container_name,
+            logs: vec![],
+            scroll_offset: 0,
+            follow: true,
+            max_lines: 1000,
+        });
+    }
+
+    /// Close log view
+    pub fn close_log_view(&mut self) {
+        self.log_view = None;
+    }
+
+    /// Add log entry to log view
+    pub fn add_log_entry(&mut self, entry: crate::docker::LogEntry) {
+        if let Some(log_view) = &mut self.log_view {
+            log_view.logs.push(entry);
+            // Trim to max lines
+            if log_view.logs.len() > log_view.max_lines {
+                log_view.logs.remove(0);
+                if log_view.scroll_offset > 0 {
+                    log_view.scroll_offset -= 1;
+                }
+            }
+            // Auto-scroll if following
+            if log_view.follow {
+                log_view.scroll_offset = log_view.logs.len().saturating_sub(1);
+            }
+        }
+    }
+
+    /// Scroll up in log view
+    pub fn scroll_logs_up(&mut self, amount: usize) {
+        if let Some(log_view) = &mut self.log_view {
+            log_view.scroll_offset = log_view.scroll_offset.saturating_sub(amount);
+            log_view.follow = false; // Disable follow when manually scrolling
+        }
+    }
+
+    /// Scroll down in log view
+    pub fn scroll_logs_down(&mut self, amount: usize) {
+        if let Some(log_view) = &mut self.log_view {
+            let max_offset = log_view.logs.len().saturating_sub(1);
+            log_view.scroll_offset = (log_view.scroll_offset + amount).min(max_offset);
+            // Re-enable follow if at bottom
+            if log_view.scroll_offset >= max_offset {
+                log_view.follow = true;
+            }
+        }
+    }
+
+    /// Toggle follow mode
+    pub fn toggle_log_follow(&mut self) {
+        if let Some(log_view) = &mut self.log_view {
+            log_view.follow = !log_view.follow;
+            if log_view.follow {
+                // Jump to bottom when enabling follow
+                log_view.scroll_offset = log_view.logs.len().saturating_sub(1);
+            }
+        }
     }
 }
 

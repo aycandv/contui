@@ -2,4 +2,4 @@
 
 pub mod app_state;
 
-pub use app_state::{AppState, Notification, Panel};
+pub use app_state::{AppState, LogViewState, Notification, Panel};

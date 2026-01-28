@@ -60,6 +60,11 @@ impl UiApp {
             return UiAction::None;
         }
 
+        // If log view is active, handle log view keys
+        if self.state.log_view.is_some() {
+            return self.handle_log_view_key(key);
+        }
+
         // Global key handlers
         match key.code {
             // Quit
@@ -211,6 +216,51 @@ impl UiApp {
         }
     }
 
+    /// Handle log view keys
+    fn handle_log_view_key(&mut self, key: KeyEvent) -> UiAction {
+        match key.code {
+            // Exit log view
+            KeyCode::Char('q') | KeyCode::Esc => {
+                self.state.close_log_view();
+                UiAction::None
+            }
+            // Toggle follow mode
+            KeyCode::Char('f') => {
+                self.state.toggle_log_follow();
+                UiAction::None
+            }
+            // Scroll up
+            KeyCode::Up | KeyCode::PageUp => {
+                let amount = if key.code == KeyCode::PageUp { 10 } else { 1 };
+                self.state.scroll_logs_up(amount);
+                UiAction::None
+            }
+            // Scroll down
+            KeyCode::Down | KeyCode::PageDown => {
+                let amount = if key.code == KeyCode::PageDown { 10 } else { 1 };
+                self.state.scroll_logs_down(amount);
+                UiAction::None
+            }
+            // Go to top
+            KeyCode::Home => {
+                if let Some(ref mut log_view) = self.state.log_view {
+                    log_view.scroll_offset = 0;
+                    log_view.follow = false;
+                }
+                UiAction::None
+            }
+            // Go to bottom
+            KeyCode::End => {
+                if let Some(ref mut log_view) = self.state.log_view {
+                    log_view.scroll_offset = log_view.logs.len().saturating_sub(1);
+                    log_view.follow = true;
+                }
+                UiAction::None
+            }
+            _ => UiAction::None,
+        }
+    }
+
     /// Get the currently selected container ID
     fn selected_container_id(&self) -> Option<String> {
         self.state
@@ -295,7 +345,14 @@ impl UiApp {
 
     /// Handle logs action
     fn handle_logs_action(&mut self) -> UiAction {
-        if let Some(id) = self.selected_container_id() {
+        if let Some(container) = self.state.containers.get(self.state.container_list_selected) {
+            let id = container.id.clone();
+            let name = container.names.first().cloned().unwrap_or_else(|| container.short_id.clone());
+            
+            // Open log view in state
+            self.state.open_log_view(id.clone(), name);
+            
+            // Return action to start log streaming
             UiAction::ShowContainerLogs(id)
         } else {
             UiAction::None
@@ -455,12 +512,17 @@ impl UiApp {
             self.render_notification(frame, area, notif);
         }
 
+        // Render log viewer if active (on top of everything)
+        if let Some(ref log_view) = self.state.log_view {
+            crate::ui::components::log_viewer::render_log_viewer(frame, area, log_view);
+        }
+
         // Render confirmation dialog if active
         if let Some(ref confirm) = self.state.confirm_dialog {
             self.render_confirmation_dialog(frame, area, confirm);
         }
 
-        // Render help overlay if active
+        // Render help overlay if active (on top of everything except notifications)
         if self.state.show_help {
             self.render_help_overlay(frame, area);
         }
@@ -776,7 +838,9 @@ impl UiApp {
 
     /// Render the footer
     fn render_footer(&self, frame: &mut Frame, area: Rect) {
-        let help_text = if self.state.confirm_dialog.is_some() {
+        let help_text = if self.state.log_view.is_some() {
+            Cow::Borrowed(" [↑/↓]Scroll [PgUp/PgDn]Page [f]Follow [Home]Top [End]Bottom [q]Close ")
+        } else if self.state.confirm_dialog.is_some() {
             Cow::Borrowed(" [y]Yes [n]No ")
         } else if self.state.show_help {
             Cow::Borrowed(" Press any key to close help ")

@@ -3,6 +3,7 @@
 use anyhow::Result;
 use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
 use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
+use futures::StreamExt;
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 use std::io;
@@ -182,10 +183,9 @@ impl App {
             UiAction::RemoveContainer(id) => {
                 self.remove_container(&id).await;
             }
-            UiAction::ShowContainerLogs(_id) => {
-                // TODO: Implement logs view in future story
-                info!("Show logs not yet implemented");
-                self.state.add_notification("Logs view not yet implemented", NotificationLevel::Warning);
+            UiAction::ShowContainerLogs(id) => {
+                // Start log streaming in a background task
+                self.start_log_streaming(id).await;
             }
             UiAction::RemoveImage(id) => {
                 self.remove_image(&id).await;
@@ -495,6 +495,29 @@ impl App {
                 Err(e) => {
                     error!("Failed to prune networks: {}", e);
                     self.state.add_notification(format!("Failed to prune networks: {}", e), NotificationLevel::Error);
+                }
+            }
+        }
+    }
+
+    /// Start streaming logs from a container
+    async fn start_log_streaming(&mut self, container_id: String) {
+        if let Some(client) = &self.docker_client {
+            info!("Starting log streaming for container {}", container_id);
+            
+            // For now, just fetch the last 100 lines of logs
+            // Real-time streaming would require a background task
+            let mut stream = client.stream_logs(&container_id, false, 100);
+            
+            while let Some(result) = stream.next().await {
+                match result {
+                    Ok(entry) => {
+                        self.state.add_log_entry(entry);
+                    }
+                    Err(e) => {
+                        warn!("Error reading log: {}", e);
+                        break;
+                    }
                 }
             }
         }
