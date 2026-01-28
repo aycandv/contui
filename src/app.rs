@@ -503,15 +503,18 @@ impl App {
     /// Fetch logs from a container and populate log view
     async fn start_log_streaming(&mut self, container_id: String) {
         if let Some(client) = &self.docker_client {
-            info!("Fetching logs for container {}", container_id);
+            info!("Fetching logs for container '{}'", container_id);
             
             // Fetch the last 100 lines of logs
             match client.fetch_logs(&container_id, 100).await {
                 Ok(entries) => {
                     let count = entries.len();
-                    info!("Fetched {} log entries", count);
+                    info!("Fetched {} log entries for container {}", count, container_id);
                     if count == 0 {
-                        self.state.add_notification("No logs found for container", NotificationLevel::Warning);
+                        self.state.add_notification(
+                            format!("No logs found for container {}", &container_id[..12.min(container_id.len())]), 
+                            NotificationLevel::Warning
+                        );
                     } else {
                         for entry in entries {
                             self.state.add_log_entry(entry);
@@ -520,7 +523,7 @@ impl App {
                     }
                 }
                 Err(e) => {
-                    warn!("Failed to fetch logs: {}", e);
+                    warn!("Failed to fetch logs for container {}: {}", container_id, e);
                     self.state.add_notification(format!("Failed to fetch logs: {}", e), NotificationLevel::Error);
                 }
             }

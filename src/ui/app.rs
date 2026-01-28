@@ -10,7 +10,7 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 use ratatui::Frame;
 use tracing::{debug, info};
 
-use crate::core::{ConfirmAction, ContainerState, Tab, UiAction};
+use crate::core::{ConfirmAction, ContainerState, NotificationLevel, Tab, UiAction};
 use crate::state::AppState;
 use crate::ui::components::ContainerListWidget;
 
@@ -350,7 +350,10 @@ impl UiApp {
             let name = container.names.first().cloned().unwrap_or_else(|| container.short_id.clone());
             
             // Open log view in state
-            self.state.open_log_view(id.clone(), name);
+            self.state.open_log_view(id.clone(), name.clone());
+            
+            // Show notification that we're loading logs
+            self.state.add_notification(format!("Loading logs for {}...", name), NotificationLevel::Info);
             
             // Return action to start log streaming
             UiAction::ShowContainerLogs(id)
