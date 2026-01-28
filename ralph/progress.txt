@@ -2,32 +2,29 @@
 
 ## Status
 - Total Stories: 4
-- Completed: 0 (US-013-1 partially done - state management complete, UI rendering needed)
-- Current Story: US-013-1
+- Completed: 1
+- Current Story: US-013-2
 
 ## Completed Stories
-None fully complete yet.
 
-## US-013-1 Partial Implementation
-**DONE:**
-- Added search fields to LogViewState (search_pattern, search_matches, current_match, show_search_input)
-- Added search state management methods to AppState
-- Added keybindings: '/' to open search, 'n'/'N' for navigation, 'Esc' to close
-- Added handle_log_search_key method skeleton
+### US-013-1: Add log search input and highlight matches ✅
+- Search input rendering at bottom of log view
+- Character input handling (typing, backspace)
+- Matching lines highlighted in yellow
+- Current match highlighted in magenta
+- Match counter shown (e.g., "3/15")
+- Keybindings: '/', 'n', 'N', 'Esc', 'Enter'
 
-**REMAINING for Ralph:**
-1. Render search input field at bottom of log view when show_search_input is true
-2. Handle character input for typing search pattern (update search as user types)
-3. Highlight matching log lines in render_log_viewer
-4. Show match count indicator (e.g., "3/15")
-5. Ensure search pattern is applied to newly added logs
+## In Progress
+None - ready for next story
 
-## Key Files to Modify
-- src/ui/components/log_viewer.rs - Add search input rendering and match highlighting
-- src/ui/app.rs - Complete handle_log_search_key for character input
+## Remaining Stories
 
-## Notes
-- Search is case-insensitive substring match (not regex yet)
-- matches are stored as indices into logs Vec
-- current_match is index into matches Vec
-- When follow mode is enabled and search is opened, follow is disabled
+### US-013-2: Add log level filtering
+Status: NOT STARTED
+
+### US-013-3: Add timestamp filtering  
+Status: NOT STARTED
+
+### US-013-4: Export logs to file
+Status: NOT STARTED

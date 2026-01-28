@@ -261,6 +261,23 @@ impl UiApp {
                 self.state.prev_search_match();
                 UiAction::None
             }
+            // Log level filters
+            KeyCode::Char('0') => {
+                self.state.set_log_level_filter(crate::state::LogLevelFilter::All);
+                UiAction::None
+            }
+            KeyCode::Char('1') => {
+                self.state.set_log_level_filter(crate::state::LogLevelFilter::Error);
+                UiAction::None
+            }
+            KeyCode::Char('2') => {
+                self.state.set_log_level_filter(crate::state::LogLevelFilter::Warn);
+                UiAction::None
+            }
+            KeyCode::Char('3') => {
+                self.state.set_log_level_filter(crate::state::LogLevelFilter::Info);
+                UiAction::None
+            }
             // Scroll up
             KeyCode::Up | KeyCode::PageUp => {
                 let amount = if key.code == KeyCode::PageUp { 10 } else { 1 };
@@ -985,6 +1002,7 @@ Log View:
   f                Toggle follow mode
   /                Search logs
   n/N              Next/previous match
+  0-3              Filter: 0=All, 1=Error, 2=Warn, 3=Info
   Home/End         Jump to top/bottom
   q or Esc         Close log view
 

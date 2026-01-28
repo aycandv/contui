@@ -46,6 +46,15 @@ pub struct AppState {
     pub loading: bool,
 }
 
+/// Log level filter
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogLevelFilter {
+    All,
+    Error,
+    Warn,
+    Info,
+}
+
 /// Log view state
 #[derive(Debug, Clone)]
 pub struct LogViewState {
@@ -60,6 +69,8 @@ pub struct LogViewState {
     pub search_matches: Vec<usize>, // indices of matching log entries
     pub current_match: Option<usize>, // index into search_matches
     pub show_search_input: bool,
+    // Filter functionality
+    pub level_filter: LogLevelFilter,
 }
 
 /// Panel focus areas
@@ -325,6 +336,7 @@ impl AppState {
             search_matches: vec![],
             current_match: None,
             show_search_input: false,
+            level_filter: LogLevelFilter::All,
         });
     }
 
@@ -465,6 +477,20 @@ impl AppState {
                 log_view.scroll_offset = log_view.search_matches[prev];
             }
         }
+    }
+
+    /// Set log level filter
+    pub fn set_log_level_filter(&mut self, filter: LogLevelFilter) {
+        if let Some(log_view) = &mut self.log_view {
+            log_view.level_filter = filter;
+            // Reset scroll to top when changing filter
+            log_view.scroll_offset = 0;
+        }
+    }
+
+    /// Clear log level filter (set to All)
+    pub fn clear_log_level_filter(&mut self) {
+        self.set_log_level_filter(LogLevelFilter::All);
     }
 }
 

@@ -8,7 +8,21 @@ use ratatui::{
     Frame,
 };
 
-use crate::state::LogViewState;
+use crate::state::{LogLevelFilter, LogViewState};
+
+/// Detect log level from message content
+fn detect_log_level(message: &str) -> LogLevelFilter {
+    let msg_upper = message.to_uppercase();
+    if msg_upper.contains("ERROR") || msg_upper.contains("FATAL") || msg_upper.contains("ERR:") {
+        LogLevelFilter::Error
+    } else if msg_upper.contains("WARN") || msg_upper.contains("WARNING") {
+        LogLevelFilter::Warn
+    } else if msg_upper.contains("INFO") || msg_upper.contains("DEBUG") || msg_upper.contains("TRACE") {
+        LogLevelFilter::Info
+    } else {
+        LogLevelFilter::All
+    }
+}
 
 /// Render the log viewer overlay
 pub fn render_log_viewer(frame: &mut Frame, area: Rect, state: &LogViewState) {
@@ -29,16 +43,23 @@ pub fn render_log_viewer(frame: &mut Frame, area: Rect, state: &LogViewState) {
         (popup_area, None)
     };
 
-    // Build title with follow and search indicators
+    // Build title with follow, filter, and search indicators
+    let filter_indicator = match state.level_filter {
+        LogLevelFilter::Error => " [ERROR]",
+        LogLevelFilter::Warn => " [WARN]",
+        LogLevelFilter::Info => " [INFO]",
+        LogLevelFilter::All => "",
+    };
     let search_indicator = if state.search_pattern.is_some() {
         format!(" [SEARCH: {}]", state.search_pattern.as_ref().unwrap())
     } else {
         String::new()
     };
     let title = format!(
-        " Logs: {} {}{} ",
+        " Logs: {} {}{}{} ",
         state.container_name,
         if state.follow { "[FOLLOW]" } else { "" },
+        filter_indicator,
         search_indicator
     );
 
@@ -73,16 +94,38 @@ pub fn render_log_viewer(frame: &mut Frame, area: Rect, state: &LogViewState) {
         frame.render_widget(search_para, search_area);
     }
 
-    // Calculate visible lines
+    // Filter logs based on level filter
+    let filtered_logs: Vec<(usize, &crate::docker::LogEntry)> = state
+        .logs
+        .iter()
+        .enumerate()
+        .filter(|(_, entry)| {
+            match state.level_filter {
+                LogLevelFilter::All => true,
+                LogLevelFilter::Error => detect_log_level(&entry.message) == LogLevelFilter::Error,
+                LogLevelFilter::Warn => detect_log_level(&entry.message) == LogLevelFilter::Warn,
+                LogLevelFilter::Info => detect_log_level(&entry.message) == LogLevelFilter::Info,
+            }
+        })
+        .collect();
+
     let visible_lines = inner_area.height as usize;
-    let total_lines = state.logs.len();
+    let total_lines = filtered_logs.len();
 
     // Show message if no logs
-    if total_lines == 0 {
-        let no_logs = Paragraph::new("Press 'r' to load logs | 'q' to close | 'f' to toggle follow | '/' to search")
+    if state.logs.is_empty() {
+        let no_logs = Paragraph::new("Press 'r' to load logs | 'q' to close | 'f' to toggle follow | '/' to search | 0-3 filter")
             .style(Style::default().fg(Color::Yellow))
             .alignment(ratatui::layout::Alignment::Center);
         frame.render_widget(no_logs, inner_area);
+        return;
+    }
+
+    if total_lines == 0 {
+        let no_filtered_logs = Paragraph::new("No logs match current filter | Press 0 to show all")
+            .style(Style::default().fg(Color::Yellow))
+            .alignment(ratatui::layout::Alignment::Center);
+        frame.render_widget(no_filtered_logs, inner_area);
         return;
     }
 
@@ -98,16 +141,16 @@ pub fn render_log_viewer(frame: &mut Frame, area: Rect, state: &LogViewState) {
     let end_idx = (start_idx + visible_lines).min(total_lines);
     let log_lines: Vec<Line> = (start_idx..end_idx)
         .map(|idx| {
-            let entry = &state.logs[idx];
+            let (original_idx, entry) = filtered_logs[idx];
             let timestamp = entry
                 .timestamp
                 .map(|ts: chrono::DateTime<chrono::Utc>| ts.format("%H:%M:%S").to_string())
                 .unwrap_or_else(|| "??:??:??".to_string());
 
             // Check if this line is a search match
-            let is_match = state.search_matches.contains(&idx);
+            let is_match = state.search_matches.contains(&original_idx);
             let is_current_match = state.current_match
-                .map(|current_idx| state.search_matches.get(current_idx) == Some(&idx))
+                .map(|current_idx| state.search_matches.get(current_idx) == Some(&original_idx))
                 .unwrap_or(false);
 
             let mut style = if entry.is_stderr {
@@ -182,6 +225,8 @@ mod tests {
 
     #[test]
     fn test_log_viewer_creation() {
+        use crate::state::LogLevelFilter;
+        
         let state = LogViewState {
             container_id: "abc123".to_string(),
             container_name: "test-container".to_string(),
@@ -199,6 +244,7 @@ mod tests {
             search_matches: vec![],
             current_match: None,
             show_search_input: false,
+            level_filter: LogLevelFilter::All,
         };
 
         assert_eq!(state.container_name, "test-container");
