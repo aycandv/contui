@@ -9,8 +9,8 @@ use tracing::debug;
 use crate::core::{DockerError, Result};
 use crate::docker::DockerClient;
 
-/// Timeout for log fetching operations
-const LOG_FETCH_TIMEOUT: Duration = Duration::from_secs(10);
+/// Timeout for individual log stream items
+const LOG_ITEM_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Log entry from a container
 #[derive(Debug, Clone)]
@@ -23,16 +23,14 @@ pub struct LogEntry {
 impl DockerClient {
     /// Fetch the last N lines of logs from a container (non-streaming)
     pub async fn fetch_logs(&self, id: &str, tail: usize) -> Result<Vec<LogEntry>> {
-        use crate::core::DockMonError;
-        
         debug!("Fetching last {} log lines for container {}", tail, id);
 
-        // Build options
+        // Build options - disable timestamps to get simpler output
         let tail_str = if tail == 0 { "all".to_string() } else { tail.to_string() };
         let options = LogsOptions::<String> {
             stdout: true,
             stderr: true,
-            timestamps: true,
+            timestamps: false,  // Disable timestamps for simpler parsing
             follow: false,
             tail: tail_str,
             ..Default::default()
@@ -41,43 +39,41 @@ impl DockerClient {
         let mut stream = self.inner().logs(id, Some(options));
         let mut entries = Vec::new();
 
-        // Read logs with timeout to prevent hanging
-        let fetch_future = async {
-            while let Some(result) = stream.next().await {
-                match result {
-                    Ok(log) => {
-                        debug!("Raw log output: {:?}", log);
-                        match Self::parse_log_entry(log) {
-                            Ok(entry) => {
-                                debug!("Parsed log entry: {:?}", entry);
-                                entries.push(entry);
-                            }
-                            Err(e) => {
-                                debug!("Failed to parse log entry: {}", e);
+        // Read logs with timeout on each item to prevent hanging
+        loop {
+            match timeout(LOG_ITEM_TIMEOUT, stream.next()).await {
+                Ok(Some(Ok(log))) => {
+                    debug!("Raw log output: {:?}", log);
+                    match Self::parse_log_entry(log) {
+                        Ok(entry) => {
+                            debug!("Parsed log entry: {:?}", entry);
+                            entries.push(entry);
+                            if entries.len() >= tail {
+                                break;  // Got enough entries
                             }
                         }
-                    }
-                    Err(e) => {
-                        debug!("Error reading log: {}", e);
-                        // Continue reading other logs
+                        Err(e) => {
+                            debug!("Failed to parse log entry: {}", e);
+                        }
                     }
                 }
-            }
-            Ok::<_, DockMonError>(())
-        };
-
-        match timeout(LOG_FETCH_TIMEOUT, fetch_future).await {
-            Ok(Ok(())) => {
-                debug!("Fetched {} log entries total", entries.len());
-                Ok(entries)
-            }
-            Ok(Err(e)) => Err(e),
-            Err(_) => {
-                debug!("Log fetch timed out after {:?}, returning {} entries", LOG_FETCH_TIMEOUT, entries.len());
-                // Return what we have so far
-                Ok(entries)
+                Ok(Some(Err(e))) => {
+                    debug!("Error reading log: {}", e);
+                    // Continue reading other logs
+                }
+                Ok(None) => {
+                    debug!("Log stream ended");
+                    break;  // Stream ended
+                }
+                Err(_) => {
+                    debug!("Timeout waiting for next log entry, returning {} entries", entries.len());
+                    break;  // Timeout on individual item
+                }
             }
         }
+
+        debug!("Fetched {} log entries total", entries.len());
+        Ok(entries)
     }
 
     /// Stream logs from a container
