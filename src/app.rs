@@ -206,11 +206,14 @@ impl App {
                     if let Some(container) = self.state.containers.get(self.state.container_list_selected) {
                         let name = container.names.first().cloned().unwrap_or_else(|| container.short_id.clone());
                         self.state.open_log_view(id.clone(), name);
-                        self.state.add_notification("Loading logs...", NotificationLevel::Info);
+                        self.state.add_notification("Press 'r' to load logs", NotificationLevel::Info);
                     }
+                } else {
+                    // Log view is already open, user pressed 'r' to refresh
+                    // Start log streaming (this might freeze - but at least log view is already open)
+                    self.state.add_notification("Loading logs...", NotificationLevel::Info);
+                    self.start_log_streaming(id);
                 }
-                // Start log streaming (non-blocking)
-                self.start_log_streaming(id);
             }
             UiAction::RemoveImage(id) => {
                 self.remove_image(&id).await;
@@ -541,16 +544,25 @@ impl App {
             let (tx, rx) = mpsc::channel(1);
             self.log_fetch_rx = Some(rx);
             
-            // Clone for the async task
+            // Clone client for the thread
             let client = client.clone();
             
-            // Spawn async task - fetch_logs has its own timeout handling
-            tokio::spawn(async move {
-                // fetch_logs has per-item timeouts, so this shouldn't hang
-                let result = client.fetch_logs(&container_id, 100).await;
+            // Spawn a completely separate OS thread with its own runtime
+            // This is the only way to ensure bollard's blocking operations don't freeze our UI
+            std::thread::spawn(move || {
+                // Create a new runtime just for this thread
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("Failed to create runtime");
                 
-                // Send result back via channel (ignore send errors if receiver dropped)
-                let _ = tx.send(result).await;
+                rt.block_on(async move {
+                    // fetch_logs has per-item timeouts
+                    let result = client.fetch_logs(&container_id, 100).await;
+                    
+                    // Send result back via channel (ignore send errors if receiver dropped)
+                    let _ = tx.send(result).await;
+                });
             });
         } else {
             self.state.add_notification("Not connected to Docker", NotificationLevel::Error);

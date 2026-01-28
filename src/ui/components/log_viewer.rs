@@ -39,7 +39,7 @@ pub fn render_log_viewer(frame: &mut Frame, area: Rect, state: &LogViewState) {
 
     // Show message if no logs
     if total_lines == 0 {
-        let no_logs = Paragraph::new("No logs available. Press 'q' to close.")
+        let no_logs = Paragraph::new("Press 'r' to load logs | 'q' to close | 'f' to toggle follow")
             .style(Style::default().fg(Color::Yellow))
             .alignment(ratatui::layout::Alignment::Center);
         frame.render_widget(no_logs, inner_area);
