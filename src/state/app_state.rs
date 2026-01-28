@@ -17,6 +17,8 @@ pub struct AppState {
 
     // Docker data
     pub containers: Vec<ContainerSummary>,
+    pub selected_container: Option<String>,
+    pub container_list_selected: usize,
     pub images: Vec<ImageSummary>,
     pub volumes: Vec<VolumeSummary>,
     pub networks: Vec<NetworkSummary>,
@@ -58,6 +60,8 @@ impl AppState {
             previous_tab: None,
             focused_panel: Panel::Sidebar,
             containers: vec![],
+            selected_container: None,
+            container_list_selected: 0,
             images: vec![],
             volumes: vec![],
             networks: vec![],
@@ -95,6 +99,45 @@ impl AppState {
     /// Update containers list
     pub fn update_containers(&mut self, containers: Vec<ContainerSummary>) {
         self.containers = containers;
+        // Adjust selection if needed
+        if !self.containers.is_empty() {
+            if self.container_list_selected >= self.containers.len() {
+                self.container_list_selected = self.containers.len() - 1;
+            }
+            self.selected_container = Some(
+                self.containers[self.container_list_selected].id.clone()
+            );
+        } else {
+            self.container_list_selected = 0;
+            self.selected_container = None;
+        }
+    }
+
+    /// Navigate to next container in list
+    pub fn next_container(&mut self) {
+        if self.containers.is_empty() {
+            return;
+        }
+        self.container_list_selected = 
+            (self.container_list_selected + 1) % self.containers.len();
+        self.selected_container = Some(
+            self.containers[self.container_list_selected].id.clone()
+        );
+    }
+
+    /// Navigate to previous container in list
+    pub fn previous_container(&mut self) {
+        if self.containers.is_empty() {
+            return;
+        }
+        if self.container_list_selected == 0 {
+            self.container_list_selected = self.containers.len() - 1;
+        } else {
+            self.container_list_selected -= 1;
+        }
+        self.selected_container = Some(
+            self.containers[self.container_list_selected].id.clone()
+        );
     }
 
     /// Update images list

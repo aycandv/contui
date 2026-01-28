@@ -1,9 +1,5 @@
 //! UI components
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test_placeholder() {
-        assert!(true);
-    }
-}
+pub mod container_list;
+
+pub use container_list::ContainerListWidget;
