@@ -541,28 +541,16 @@ impl App {
             let (tx, rx) = mpsc::channel(1);
             self.log_fetch_rx = Some(rx);
             
-            // Clone for the blocking task
+            // Clone for the async task
             let client = client.clone();
             
-            // Spawn blocking task - the entire log fetch including stream creation
-            // is done in a blocking thread to avoid freezing the async runtime
-            tokio::task::spawn_blocking(move || {
-                // Create a new runtime for this blocking thread
-                let rt = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                    .map_err(|e| crate::core::DockMonError::Other(format!("Failed to create runtime: {}", e)))?;
+            // Spawn async task - fetch_logs has its own timeout handling
+            tokio::spawn(async move {
+                // fetch_logs has per-item timeouts, so this shouldn't hang
+                let result = client.fetch_logs(&container_id, 100).await;
                 
-                rt.block_on(async move {
-                    let result = tokio::time::timeout(
-                        std::time::Duration::from_secs(5),
-                        client.fetch_logs(&container_id, 100)
-                    ).await.map_err(|_| crate::core::DockMonError::Other("Log fetch timeout".to_string()))?;
-                    
-                    // Send result back via channel (ignore send errors if receiver dropped)
-                    let _ = tx.send(result).await;
-                    Ok::<(), crate::core::DockMonError>(())
-                })
+                // Send result back via channel (ignore send errors if receiver dropped)
+                let _ = tx.send(result).await;
             });
         } else {
             self.state.add_notification("Not connected to Docker", NotificationLevel::Error);
