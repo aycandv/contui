@@ -10,9 +10,12 @@
       "acceptanceCriteria": [
         "Initialize git repository with git init",
         "Create Cargo.toml with dependencies: ratatui, crossterm, bollard, tokio, serde, toml, chrono, regex, unicode-width, anyhow, thiserror",
+        "Add dev-dependencies: mockall, tokio-test for testing",
         "Set up basic src/ directory structure with modules: config, core, docker, ui, state, utils",
         "Create main.rs with tokio async main function",
         "Add .gitignore for Rust project (target/, Cargo.lock, .env, etc.)",
+        "Create tests/ directory with integration test structure",
+        "Add .github/workflows/ci.yml for GitHub Actions CI",
         "Create initial git commit: 'chore(project): initial project setup'",
         "Verify project compiles with cargo check",
         "Typecheck passes"
