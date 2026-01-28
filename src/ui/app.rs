@@ -278,6 +278,36 @@ impl UiApp {
                 self.state.set_log_level_filter(crate::state::LogLevelFilter::Info);
                 UiAction::None
             }
+            // Time filter
+            KeyCode::Char('t') => {
+                // Cycle through time filters: 5m -> 15m -> 1h -> all -> 5m
+                if let Some(ref log_view) = self.state.log_view {
+                    let new_filter = match log_view.time_filter {
+                        None => Some("5m"),
+                        Some(_) => {
+                            let elapsed = chrono::Utc::now() - log_view.time_filter.unwrap();
+                            let mins = elapsed.num_minutes();
+                            if mins <= 5 {
+                                Some("15m")
+                            } else if mins <= 15 {
+                                Some("1h")
+                            } else {
+                                None // clear filter
+                            }
+                        }
+                    };
+                    if let Some(filter) = new_filter {
+                        self.state.set_time_filter(filter);
+                    } else {
+                        self.state.clear_time_filter();
+                    }
+                }
+                UiAction::None
+            }
+            KeyCode::Char('T') => {
+                self.state.clear_time_filter();
+                UiAction::None
+            }
             // Scroll up
             KeyCode::Up | KeyCode::PageUp => {
                 let amount = if key.code == KeyCode::PageUp { 10 } else { 1 };
@@ -1003,6 +1033,7 @@ Log View:
   /                Search logs
   n/N              Next/previous match
   0-3              Filter: 0=All, 1=Error, 2=Warn, 3=Info
+  t/T              Time filter: cycle/clear
   Home/End         Jump to top/bottom
   q or Esc         Close log view
 

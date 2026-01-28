@@ -71,6 +71,8 @@ pub struct LogViewState {
     pub show_search_input: bool,
     // Filter functionality
     pub level_filter: LogLevelFilter,
+    pub time_filter: Option<chrono::DateTime<chrono::Utc>>, // show logs after this time
+    pub show_time_input: bool,
 }
 
 /// Panel focus areas
@@ -337,6 +339,8 @@ impl AppState {
             current_match: None,
             show_search_input: false,
             level_filter: LogLevelFilter::All,
+            time_filter: None,
+            show_time_input: false,
         });
     }
 
@@ -491,6 +495,58 @@ impl AppState {
     /// Clear log level filter (set to All)
     pub fn clear_log_level_filter(&mut self) {
         self.set_log_level_filter(LogLevelFilter::All);
+    }
+
+    /// Show time filter input
+    pub fn show_time_filter(&mut self) {
+        if let Some(log_view) = &mut self.log_view {
+            log_view.show_time_input = true;
+            log_view.follow = false;
+        }
+    }
+
+    /// Hide time filter input
+    pub fn hide_time_filter(&mut self) {
+        if let Some(log_view) = &mut self.log_view {
+            log_view.show_time_input = false;
+        }
+    }
+
+    /// Set time filter (e.g., "5m" for 5 minutes, "1h" for 1 hour)
+    pub fn set_time_filter(&mut self, input: &str) {
+        if let Some(log_view) = &mut self.log_view {
+            let now = chrono::Utc::now();
+            
+            let cutoff = if input.ends_with('m') {
+                input.trim_end_matches('m').parse::<i64>()
+                    .ok()
+                    .map(|mins| now - chrono::Duration::minutes(mins))
+            } else if input.ends_with('h') {
+                input.trim_end_matches('h').parse::<i64>()
+                    .ok()
+                    .map(|hours| now - chrono::Duration::hours(hours))
+            } else if input.ends_with('d') {
+                input.trim_end_matches('d').parse::<i64>()
+                    .ok()
+                    .map(|days| now - chrono::Duration::days(days))
+            } else {
+                // Try to parse as ISO timestamp
+                chrono::DateTime::parse_from_rfc3339(input)
+                    .ok()
+                    .map(|dt| dt.with_timezone(&chrono::Utc))
+            };
+            
+            log_view.time_filter = cutoff;
+            log_view.scroll_offset = 0;
+        }
+    }
+
+    /// Clear time filter
+    pub fn clear_time_filter(&mut self) {
+        if let Some(log_view) = &mut self.log_view {
+            log_view.time_filter = None;
+            log_view.scroll_offset = 0;
+        }
     }
 }
 

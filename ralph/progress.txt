@@ -2,8 +2,8 @@
 
 ## Status
 - Total Stories: 4
-- Completed: 1
-- Current Story: US-013-2
+- Completed: 2
+- Current Story: US-013-3
 
 ## Completed Stories
 
@@ -15,15 +15,19 @@
 - Match counter shown (e.g., "3/15")
 - Keybindings: '/', 'n', 'N', 'Esc', 'Enter'
 
+### US-013-2: Add log level filtering ✅
+- LogLevelFilter enum: All, Error, Warn, Info
+- Auto-detect level from message (ERROR, WARN, INFO, etc.)
+- Keybindings: 0=All, 1=Error, 2=Warn, 3=Info
+- Filter state shown in title: "Logs: [ERROR] container_name"
+- Scroll resets to top when filter changes
+
 ## In Progress
 None - ready for next story
 
 ## Remaining Stories
 
-### US-013-2: Add log level filtering
-Status: NOT STARTED
-
-### US-013-3: Add timestamp filtering  
+### US-013-3: Add timestamp filtering
 Status: NOT STARTED
 
 ### US-013-4: Export logs to file

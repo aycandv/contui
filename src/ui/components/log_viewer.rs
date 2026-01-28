@@ -43,23 +43,34 @@ pub fn render_log_viewer(frame: &mut Frame, area: Rect, state: &LogViewState) {
         (popup_area, None)
     };
 
-    // Build title with follow, filter, and search indicators
+    // Build title with follow, filter, time, and search indicators
     let filter_indicator = match state.level_filter {
         LogLevelFilter::Error => " [ERROR]",
         LogLevelFilter::Warn => " [WARN]",
         LogLevelFilter::Info => " [INFO]",
         LogLevelFilter::All => "",
     };
+    let time_indicator = state.time_filter.map(|t| {
+        let elapsed = chrono::Utc::now() - t;
+        if elapsed.num_hours() > 0 {
+            format!(" [{}h]", elapsed.num_hours())
+        } else if elapsed.num_minutes() > 0 {
+            format!(" [{}m]", elapsed.num_minutes())
+        } else {
+            " [<1m]".to_string()
+        }
+    }).unwrap_or_default();
     let search_indicator = if state.search_pattern.is_some() {
         format!(" [SEARCH: {}]", state.search_pattern.as_ref().unwrap())
     } else {
         String::new()
     };
     let title = format!(
-        " Logs: {} {}{}{} ",
+        " Logs: {} {}{}{}{} ",
         state.container_name,
         if state.follow { "[FOLLOW]" } else { "" },
         filter_indicator,
+        time_indicator,
         search_indicator
     );
 
@@ -94,18 +105,26 @@ pub fn render_log_viewer(frame: &mut Frame, area: Rect, state: &LogViewState) {
         frame.render_widget(search_para, search_area);
     }
 
-    // Filter logs based on level filter
+    // Filter logs based on level filter and time filter
     let filtered_logs: Vec<(usize, &crate::docker::LogEntry)> = state
         .logs
         .iter()
         .enumerate()
         .filter(|(_, entry)| {
-            match state.level_filter {
+            // Level filter
+            let level_match = match state.level_filter {
                 LogLevelFilter::All => true,
                 LogLevelFilter::Error => detect_log_level(&entry.message) == LogLevelFilter::Error,
                 LogLevelFilter::Warn => detect_log_level(&entry.message) == LogLevelFilter::Warn,
                 LogLevelFilter::Info => detect_log_level(&entry.message) == LogLevelFilter::Info,
-            }
+            };
+            
+            // Time filter (show logs after the cutoff time)
+            let time_match = state.time_filter.map_or(true, |cutoff| {
+                entry.timestamp.map_or(false, |ts| ts >= cutoff)
+            });
+            
+            level_match && time_match
         })
         .collect();
 
@@ -245,6 +264,8 @@ mod tests {
             current_match: None,
             show_search_input: false,
             level_filter: LogLevelFilter::All,
+            time_filter: None,
+            show_time_input: false,
         };
 
         assert_eq!(state.container_name, "test-container");
