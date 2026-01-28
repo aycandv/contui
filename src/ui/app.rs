@@ -1,5 +1,7 @@
 //! UI Application logic
 
+use std::borrow::Cow;
+
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -8,7 +10,7 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 use ratatui::Frame;
 use tracing::{debug, info};
 
-use crate::core::{NotificationLevel, Tab};
+use crate::core::{ConfirmAction, ContainerState, Tab, UiAction};
 use crate::state::AppState;
 use crate::ui::components::ContainerListWidget;
 
@@ -27,29 +29,35 @@ impl UiApp {
         }
     }
 
-    /// Handle a terminal event
-    pub fn handle_event(&mut self, event: Event) {
+    /// Handle a terminal event and return any action to execute
+    pub fn handle_event(&mut self, event: Event) -> UiAction {
         match event {
             Event::Key(key_event) => self.handle_key_event(key_event),
             Event::Resize(width, height) => {
                 debug!("Terminal resized to {}x{}", width, height);
                 self.state.terminal_size = (width, height);
+                UiAction::None
             }
-            _ => {}
+            _ => UiAction::None,
         }
     }
 
-    /// Handle keyboard events
-    fn handle_key_event(&mut self, key: KeyEvent) {
+    /// Handle keyboard events and return any action to execute
+    fn handle_key_event(&mut self, key: KeyEvent) -> UiAction {
         // Only handle key press events (not release or repeat)
         if key.kind != KeyEventKind::Press {
-            return;
+            return UiAction::None;
+        }
+
+        // If confirmation dialog is showing
+        if self.state.confirm_dialog.is_some() {
+            return self.handle_confirmation_key(key);
         }
 
         // If help is showing, any key closes it (except when toggling help)
         if self.state.show_help && key.code != KeyCode::Char('?') && key.code != KeyCode::Char('h') {
             self.state.show_help = false;
-            return;
+            return UiAction::None;
         }
 
         // Global key handlers
@@ -58,29 +66,32 @@ impl UiApp {
             KeyCode::Char('q') if key.modifiers.is_empty() => {
                 info!("Quit key pressed");
                 self.should_quit = true;
+                UiAction::Quit
             }
             KeyCode::Char('c') if key.modifiers == KeyModifiers::CONTROL => {
                 info!("Ctrl+C pressed");
                 self.should_quit = true;
+                UiAction::Quit
             }
 
             // Tab switching with number keys
-            KeyCode::Char('1') => self.switch_tab(Tab::Containers),
-            KeyCode::Char('2') => self.switch_tab(Tab::Images),
-            KeyCode::Char('3') => self.switch_tab(Tab::Volumes),
-            KeyCode::Char('4') => self.switch_tab(Tab::Networks),
-            KeyCode::Char('5') => self.switch_tab(Tab::Compose),
-            KeyCode::Char('6') => self.switch_tab(Tab::System),
+            KeyCode::Char('1') => { self.switch_tab(Tab::Containers); UiAction::None }
+            KeyCode::Char('2') => { self.switch_tab(Tab::Images); UiAction::None }
+            KeyCode::Char('3') => { self.switch_tab(Tab::Volumes); UiAction::None }
+            KeyCode::Char('4') => { self.switch_tab(Tab::Networks); UiAction::None }
+            KeyCode::Char('5') => { self.switch_tab(Tab::Compose); UiAction::None }
+            KeyCode::Char('6') => { self.switch_tab(Tab::System); UiAction::None }
 
             // Tab switching with arrow keys (or container nav when on Containers tab)
-            KeyCode::Right => self.next_tab(),
-            KeyCode::Left => self.previous_tab(),
+            KeyCode::Right => { self.next_tab(); UiAction::None }
+            KeyCode::Left => { self.previous_tab(); UiAction::None }
             KeyCode::Down => {
                 if self.state.current_tab == Tab::Containers {
                     self.state.next_container();
                 } else {
                     self.next_tab();
                 }
+                UiAction::None
             }
             KeyCode::Up => {
                 if self.state.current_tab == Tab::Containers {
@@ -88,32 +99,167 @@ impl UiApp {
                 } else {
                     self.previous_tab();
                 }
+                UiAction::None
             }
 
             // Navigation between panels
-            KeyCode::Tab => self.next_panel(),
-            KeyCode::BackTab => self.previous_panel(),
+            KeyCode::Tab => { self.next_panel(); UiAction::None }
+            KeyCode::BackTab => { self.previous_panel(); UiAction::None }
+
+            // Container actions (when on Containers tab) - must come before unguarded 'k'
+            KeyCode::Char('s') if self.state.current_tab == Tab::Containers => {
+                self.handle_start_stop_action()
+            }
+            KeyCode::Char('r') if self.state.current_tab == Tab::Containers => {
+                self.handle_restart_action()
+            }
+            KeyCode::Char('p') if self.state.current_tab == Tab::Containers => {
+                self.handle_pause_action()
+            }
+            KeyCode::Char('k') if self.state.current_tab == Tab::Containers && key.modifiers.is_empty() => {
+                self.handle_kill_action()
+            }
+            KeyCode::Char('d') if self.state.current_tab == Tab::Containers => {
+                self.handle_remove_action()
+            }
+            KeyCode::Char('l') if self.state.current_tab == Tab::Containers => {
+                self.handle_logs_action()
+            }
 
             // Container list navigation (when on Containers tab)
             KeyCode::Char('j') => {
                 if self.state.current_tab == Tab::Containers {
                     self.state.next_container();
                 }
+                UiAction::None
             }
             KeyCode::Char('k') => {
                 if self.state.current_tab == Tab::Containers {
                     self.state.previous_container();
                 }
+                UiAction::None
             }
 
             // Help
             KeyCode::Char('?') | KeyCode::Char('h') if key.modifiers.is_empty() => {
                 self.state.show_help = !self.state.show_help;
+                UiAction::None
             }
 
             _ => {
                 debug!("Unhandled key: {:?}", key);
+                UiAction::None
             }
+        }
+    }
+
+    /// Handle confirmation dialog keys
+    fn handle_confirmation_key(&mut self, key: KeyEvent) -> UiAction {
+        match key.code {
+            KeyCode::Char('y') | KeyCode::Enter => {
+                // Confirm action
+                if let Some(confirm) = self.state.confirm_dialog.take() {
+                    return confirm.action;
+                }
+                UiAction::None
+            }
+            KeyCode::Char('n') | KeyCode::Esc => {
+                // Cancel action
+                self.state.confirm_dialog = None;
+                UiAction::None
+            }
+            _ => UiAction::None,
+        }
+    }
+
+    /// Get the currently selected container ID
+    fn selected_container_id(&self) -> Option<String> {
+        self.state
+            .containers
+            .get(self.state.container_list_selected)
+            .map(|c| c.id.clone())
+    }
+
+    /// Handle start/stop action
+    fn handle_start_stop_action(&mut self) -> UiAction {
+        if let Some(container) = self.state.containers.get(self.state.container_list_selected) {
+            let id = container.id.clone();
+            match container.state {
+                ContainerState::Running => {
+                    // Running -> Stop
+                    UiAction::StopContainer(id)
+                }
+                ContainerState::Paused => {
+                    // Paused -> Unpause
+                    UiAction::UnpauseContainer(id)
+                }
+                _ => {
+                    // Stopped/Exited -> Start
+                    UiAction::StartContainer(id)
+                }
+            }
+        } else {
+            UiAction::None
+        }
+    }
+
+    /// Handle restart action
+    fn handle_restart_action(&mut self) -> UiAction {
+        if let Some(id) = self.selected_container_id() {
+            UiAction::RestartContainer(id)
+        } else {
+            UiAction::None
+        }
+    }
+
+    /// Handle pause action
+    fn handle_pause_action(&mut self) -> UiAction {
+        if let Some(container) = self.state.containers.get(self.state.container_list_selected) {
+            let id = container.id.clone();
+            if container.state == ContainerState::Paused {
+                UiAction::UnpauseContainer(id)
+            } else {
+                UiAction::PauseContainer(id)
+            }
+        } else {
+            UiAction::None
+        }
+    }
+
+    /// Handle kill action (with confirmation)
+    fn handle_kill_action(&mut self) -> UiAction {
+        if let Some(container) = self.state.containers.get(self.state.container_list_selected) {
+            let name = container.names.first().cloned().unwrap_or_else(|| container.short_id.clone());
+            let id = container.id.clone();
+            
+            self.state.confirm_dialog = Some(ConfirmAction {
+                message: format!("Kill container '{}'?", name),
+                action: UiAction::KillContainer(id),
+            });
+        }
+        UiAction::None
+    }
+
+    /// Handle remove action (with confirmation)
+    fn handle_remove_action(&mut self) -> UiAction {
+        if let Some(container) = self.state.containers.get(self.state.container_list_selected) {
+            let name = container.names.first().cloned().unwrap_or_else(|| container.short_id.clone());
+            let id = container.id.clone();
+            
+            self.state.confirm_dialog = Some(ConfirmAction {
+                message: format!("Remove container '{}'?", name),
+                action: UiAction::RemoveContainer(id),
+            });
+        }
+        UiAction::None
+    }
+
+    /// Handle logs action
+    fn handle_logs_action(&mut self) -> UiAction {
+        if let Some(id) = self.selected_container_id() {
+            UiAction::ShowContainerLogs(id)
+        } else {
+            UiAction::None
         }
     }
 
@@ -183,9 +329,108 @@ impl UiApp {
         self.render_main_content(frame, main_layout[1]);
         self.render_footer(frame, main_layout[2]);
 
-        // Render modal overlays if active
+        // Render notification overlay (if any)
+        if let Some(notif) = self.state.notifications.last() {
+            self.render_notification(frame, area, notif);
+        }
+
+        // Render confirmation dialog if active
+        if let Some(ref confirm) = self.state.confirm_dialog {
+            self.render_confirmation_dialog(frame, area, confirm);
+        }
+
+        // Render help overlay if active
         if self.state.show_help {
             self.render_help_overlay(frame, area);
+        }
+    }
+
+    /// Render confirmation dialog
+    fn render_confirmation_dialog(&self, frame: &mut Frame, area: Rect, confirm: &ConfirmAction) {
+        // Create a centered popup (50% width, 20% height, min 8 lines)
+        let popup_area = Self::centered_rect(50, 20, area);
+        let popup_area = popup_area.intersection(Rect {
+            x: popup_area.x,
+            y: popup_area.y,
+            width: popup_area.width,
+            height: popup_area.height.max(8),
+        });
+
+        // Clear the background
+        frame.render_widget(Clear, popup_area);
+
+        // Create layout for dialog content
+        let layout = Layout::default()
+            .direction(Direction::Vertical)
+            .margin(2)
+            .constraints([
+                Constraint::Min(1), // Message
+                Constraint::Length(1), // Spacer
+                Constraint::Length(1), // Buttons
+            ])
+            .split(popup_area);
+
+        // Render dialog block with title
+        let block = Block::default()
+            .title(" ⚠️ Confirmation ")
+            .title_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Yellow));
+        frame.render_widget(block, popup_area);
+
+        // Render message
+        let message = Paragraph::new(confirm.message.as_str())
+            .style(Style::default().fg(Color::White))
+            .wrap(Wrap { trim: true })
+            .alignment(ratatui::layout::Alignment::Center);
+        frame.render_widget(message, layout[0]);
+
+        // Render buttons hint
+        let buttons = Line::from(vec![
+            Span::styled("[", Style::default().fg(Color::Gray)),
+            Span::styled("y", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+            Span::styled("] Yes   [", Style::default().fg(Color::Gray)),
+            Span::styled("n", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+            Span::styled("] No", Style::default().fg(Color::Gray)),
+        ]);
+        let buttons_para = Paragraph::new(buttons)
+            .alignment(ratatui::layout::Alignment::Center);
+        frame.render_widget(buttons_para, layout[2]);
+    }
+
+    /// Render notification toast
+    fn render_notification(&self, frame: &mut Frame, area: Rect, notif: &crate::state::Notification) {
+        use ratatui::widgets::{Clear, Paragraph};
+        
+        let color = match notif.level {
+            crate::core::NotificationLevel::Info => Color::Blue,
+            crate::core::NotificationLevel::Success => Color::Green,
+            crate::core::NotificationLevel::Warning => Color::Yellow,
+            crate::core::NotificationLevel::Error => Color::Red,
+        };
+        
+        let text = format!(" {} ", notif.message);
+        let width = text.len() as u16 + 2;
+        let height = 3;
+        
+        // Position at top-right of screen
+        let x = area.width.saturating_sub(width + 2);
+        let y = 1;
+        
+        if x > 0 && area.height > height + y {
+            let notif_area = Rect::new(x, y, width.min(area.width - x), height);
+            
+            frame.render_widget(Clear, notif_area);
+            
+            let paragraph = Paragraph::new(text)
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(color))
+                )
+                .style(Style::default().fg(color));
+            
+            frame.render_widget(paragraph, notif_area);
         }
     }
 
@@ -361,15 +606,23 @@ impl UiApp {
 
     /// Render the footer
     fn render_footer(&self, frame: &mut Frame, area: Rect) {
-        let help_text = if self.state.current_tab == Tab::Containers && !self.state.containers.is_empty() {
-            " [←/→]:Tabs | [↑/↓]:Select Container | [s]Start [r]Restart [d]Delete | [?]:Help [q]:Quit "
+        let help_text = if self.state.confirm_dialog.is_some() {
+            Cow::Borrowed(" [y]Yes [n]No ")
+        } else if self.state.show_help {
+            Cow::Borrowed(" Press any key to close help ")
+        } else if self.state.current_tab == Tab::Containers && !self.state.containers.is_empty() {
+            Cow::Borrowed(" [↑/↓]Select [s]Start [p]Pause [r]Restart [k]Kill [d]Delete [l]Logs [?]Help [q]Quit ")
         } else {
-            " [←/→ or 1-6]:Switch Tabs | [?]:Help | [q]:Quit "
+            Cow::Borrowed(" [←/→ or 1-6]:Switch Tabs | [?]:Help | [q]:Quit ")
         };
 
-        let footer = Paragraph::new(help_text)
-            .style(Style::default().fg(Color::Gray).bg(Color::Black));
+        let style = if self.state.confirm_dialog.is_some() {
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::Gray).bg(Color::Black)
+        };
 
+        let footer = Paragraph::new(help_text).style(style);
         frame.render_widget(footer, area);
     }
 

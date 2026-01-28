@@ -206,6 +206,38 @@ pub enum NetworkScope {
     Swarm,
 }
 
+/// UI Actions that can be triggered from the UI
+#[derive(Debug, Clone)]
+pub enum UiAction {
+    /// No action
+    None,
+    /// Quit the application
+    Quit,
+    /// Start a container
+    StartContainer(String),
+    /// Stop a container
+    StopContainer(String),
+    /// Restart a container
+    RestartContainer(String),
+    /// Pause a container
+    PauseContainer(String),
+    /// Unpause a container
+    UnpauseContainer(String),
+    /// Kill a container
+    KillContainer(String),
+    /// Remove a container
+    RemoveContainer(String),
+    /// Show logs for a container
+    ShowContainerLogs(String),
+}
+
+/// Confirmation dialog action
+#[derive(Debug, Clone)]
+pub struct ConfirmAction {
+    pub message: String,
+    pub action: UiAction,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

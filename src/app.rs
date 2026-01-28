@@ -1,7 +1,7 @@
 //! Main application coordinator
 
 use anyhow::Result;
-use crossterm::event::{DisableMouseCapture, EnableMouseCapture, Event, KeyEventKind};
+use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
 use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
@@ -10,13 +10,14 @@ use std::time::Duration;
 use tracing::{debug, error, info, warn};
 
 use crate::config::Config;
-use crate::core::ConnectionInfo;
+use crate::core::{ConnectionInfo, NotificationLevel};
 use crate::docker::DockerClient;
 use crate::state::AppState;
-use crate::ui::UiApp;
+use crate::ui::{UiAction, UiApp};
 
 /// Main application struct
 pub struct App {
+    #[allow(dead_code)]
     config: Config,
     state: AppState,
     docker_client: Option<DockerClient>,
@@ -71,11 +72,8 @@ impl App {
         // Initial data load
         self.refresh_data().await;
 
-        // Create UI app
-        let mut ui_app = UiApp::new(self.state.clone());
-
         // Main event loop
-        let result = self.run_event_loop(&mut terminal, &mut ui_app).await;
+        let result = self.run_event_loop(&mut terminal).await;
 
         // Cleanup terminal
         restore_terminal(&mut terminal)?;
@@ -87,13 +85,16 @@ impl App {
     async fn run_event_loop(
         &mut self,
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-        ui_app: &mut UiApp,
     ) -> Result<()> {
         let mut last_tick = std::time::Instant::now();
+        let mut last_data_refresh = std::time::Instant::now();
         let tick_rate = Duration::from_millis(250);
+        let data_refresh_rate = Duration::from_secs(2); // Refresh data every 2 seconds
+        let mut should_quit;
 
         loop {
             // Render the UI
+            let ui_app = UiApp::new(self.state.clone());
             terminal.draw(|f| ui_app.draw(f))?;
 
             // Handle events with timeout
@@ -104,47 +105,215 @@ impl App {
             if crossterm::event::poll(timeout)? {
                 let event = crossterm::event::read()?;
 
-                match event {
-                    Event::Key(key) => {
-                        // Handle key events
-                        if key.kind == KeyEventKind::Press {
-                            // Close help on any key if showing
-                            if ui_app.state.show_help {
-                                ui_app.state.show_help = false;
-                                continue;
-                            }
-                        }
-                        ui_app.handle_event(event);
-                    }
-                    _ => {
-                        ui_app.handle_event(event);
-                    }
+                // Create a mutable UI app for handling events
+                let mut ui_app = UiApp::new(self.state.clone());
+                let action = ui_app.handle_event(event);
+                
+                // Check if should quit before we move ui_app
+                should_quit = ui_app.should_quit;
+                
+                // Handle the action FIRST (this may modify self.state.containers and self.state.notifications)
+                self.handle_ui_action(action).await;
+                
+                // Then sync UI state changes (confirm_dialog, show_help, etc.) to self.state
+                // We need to preserve: containers, notifications (from action handler)
+                // We need to sync from UI: confirm_dialog, show_help, current_tab, etc.
+                let mut ui_state = ui_app.state;
+                
+                // Preserve data that action handler may have updated
+                ui_state.containers = self.state.containers.clone();
+                ui_state.notifications = self.state.notifications.clone();
+                ui_state.docker_connected = self.state.docker_connected;
+                ui_state.connection_info = self.state.connection_info.clone();
+                ui_state.images = self.state.images.clone();
+                ui_state.volumes = self.state.volumes.clone();
+                ui_state.networks = self.state.networks.clone();
+                
+                self.state = ui_state;
+
+                // Check if should quit
+                if should_quit {
+                    info!("Quit signal received, exiting event loop");
+                    break;
                 }
             }
 
-            // Check if should quit
-            if ui_app.should_quit {
-                info!("Quit signal received, exiting event loop");
-                break;
-            }
-
-            // Periodic tasks
+            // Periodic tasks (every 250ms)
             if last_tick.elapsed() >= tick_rate {
-                self.on_tick().await;
+                // Refresh data periodically (every 2 seconds)
+                if last_data_refresh.elapsed() >= data_refresh_rate {
+                    self.refresh_data().await;
+                    last_data_refresh = std::time::Instant::now();
+                }
+                // Clear old notifications (older than 3 seconds)
+                self.state.clear_old_notifications(3);
                 last_tick = std::time::Instant::now();
             }
-
-            // Sync state back from UI app
-            self.state = ui_app.state.clone();
         }
 
         Ok(())
     }
 
-    /// Handle periodic tasks
-    async fn on_tick(&mut self) {
-        // Refresh data periodically
-        // In future: refresh container lists, stats, etc.
+    /// Handle UI action
+    async fn handle_ui_action(&mut self, action: UiAction) {
+        match action {
+            UiAction::None => {}
+            UiAction::Quit => {
+                // Handled in event loop
+            }
+            UiAction::StartContainer(id) => {
+                self.start_container(&id).await;
+            }
+            UiAction::StopContainer(id) => {
+                self.stop_container(&id).await;
+            }
+            UiAction::RestartContainer(id) => {
+                self.restart_container(&id).await;
+            }
+            UiAction::PauseContainer(id) => {
+                self.pause_container(&id).await;
+            }
+            UiAction::UnpauseContainer(id) => {
+                self.unpause_container(&id).await;
+            }
+            UiAction::KillContainer(id) => {
+                self.kill_container(&id).await;
+            }
+            UiAction::RemoveContainer(id) => {
+                self.remove_container(&id).await;
+            }
+            UiAction::ShowContainerLogs(_id) => {
+                // TODO: Implement logs view in future story
+                info!("Show logs not yet implemented");
+                self.state.add_notification("Logs view not yet implemented", NotificationLevel::Warning);
+            }
+        }
+    }
+
+    /// Start a container
+    async fn start_container(&mut self, id: &str) {
+        if let Some(client) = &self.docker_client {
+            info!("Starting container {}", id);
+            match client.start_container(id).await {
+                Ok(_) => {
+                    info!("Container {} started", id);
+                    self.state.add_notification("Container started", NotificationLevel::Success);
+                    self.refresh_data().await;
+                }
+                Err(e) => {
+                    error!("Failed to start container {}: {}", id, e);
+                    self.state.add_notification(format!("Failed to start: {}", e), NotificationLevel::Error);
+                }
+            }
+        }
+    }
+
+    /// Stop a container
+    async fn stop_container(&mut self, id: &str) {
+        if let Some(client) = &self.docker_client {
+            info!("Stopping container {}", id);
+            match client.stop_container(id, Some(10)).await {
+                Ok(_) => {
+                    info!("Container {} stopped", id);
+                    self.state.add_notification("Container stopped", NotificationLevel::Success);
+                    self.refresh_data().await;
+                }
+                Err(e) => {
+                    error!("Failed to stop container {}: {}", id, e);
+                    self.state.add_notification(format!("Failed to stop: {}", e), NotificationLevel::Error);
+                }
+            }
+        }
+    }
+
+    /// Restart a container
+    async fn restart_container(&mut self, id: &str) {
+        if let Some(client) = &self.docker_client {
+            info!("Restarting container {}", id);
+            match client.restart_container(id, Some(10)).await {
+                Ok(_) => {
+                    info!("Container {} restarted", id);
+                    self.state.add_notification("Container restarted", NotificationLevel::Success);
+                    self.refresh_data().await;
+                }
+                Err(e) => {
+                    error!("Failed to restart container {}: {}", id, e);
+                    self.state.add_notification(format!("Failed to restart: {}", e), NotificationLevel::Error);
+                }
+            }
+        }
+    }
+
+    /// Pause a container
+    async fn pause_container(&mut self, id: &str) {
+        if let Some(client) = &self.docker_client {
+            info!("Pausing container {}", id);
+            match client.pause_container(id).await {
+                Ok(_) => {
+                    info!("Container {} paused", id);
+                    self.state.add_notification("Container paused", NotificationLevel::Success);
+                    self.refresh_data().await;
+                }
+                Err(e) => {
+                    error!("Failed to pause container {}: {}", id, e);
+                    self.state.add_notification(format!("Failed to pause: {}", e), NotificationLevel::Error);
+                }
+            }
+        }
+    }
+
+    /// Unpause a container
+    async fn unpause_container(&mut self, id: &str) {
+        if let Some(client) = &self.docker_client {
+            info!("Unpausing container {}", id);
+            match client.unpause_container(id).await {
+                Ok(_) => {
+                    info!("Container {} unpaused", id);
+                    self.state.add_notification("Container unpaused", NotificationLevel::Success);
+                    self.refresh_data().await;
+                }
+                Err(e) => {
+                    error!("Failed to unpause container {}: {}", id, e);
+                    self.state.add_notification(format!("Failed to unpause: {}", e), NotificationLevel::Error);
+                }
+            }
+        }
+    }
+
+    /// Kill a container
+    async fn kill_container(&mut self, id: &str) {
+        if let Some(client) = &self.docker_client {
+            info!("Killing container {}", id);
+            match client.kill_container(id, None).await {
+                Ok(_) => {
+                    info!("Container {} killed", id);
+                    self.state.add_notification("Container killed", NotificationLevel::Success);
+                    self.refresh_data().await;
+                }
+                Err(e) => {
+                    error!("Failed to kill container {}: {}", id, e);
+                    self.state.add_notification(format!("Failed to kill: {}", e), NotificationLevel::Error);
+                }
+            }
+        }
+    }
+
+    /// Remove a container
+    async fn remove_container(&mut self, id: &str) {
+        if let Some(client) = &self.docker_client {
+            info!("Removing container {}", id);
+            match client.remove_container(id, false, false).await {
+                Ok(_) => {
+                    info!("Container {} removed", id);
+                    self.state.add_notification("Container removed", NotificationLevel::Success);
+                    self.refresh_data().await;
+                }
+                Err(e) => {
+                    error!("Failed to remove container {}: {}", id, e);
+                    self.state.add_notification(format!("Failed to remove: {}", e), NotificationLevel::Error);
+                }
+            }
+        }
     }
 
     /// Refresh all data from Docker

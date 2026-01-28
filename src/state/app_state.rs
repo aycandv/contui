@@ -3,8 +3,8 @@
 use chrono::Utc;
 
 use crate::core::{
-    ConnectionInfo, ContainerSummary, ImageSummary, NetworkSummary, NotificationLevel, Tab,
-    VolumeSummary,
+    ConfirmAction, ConnectionInfo, ContainerSummary, ImageSummary, NetworkSummary,
+    NotificationLevel, Tab, VolumeSummary,
 };
 
 /// Main application state
@@ -31,6 +31,7 @@ pub struct AppState {
     pub terminal_size: (u16, u16),
     pub show_help: bool,
     pub notifications: Vec<Notification>,
+    pub confirm_dialog: Option<ConfirmAction>,
 
     // Async operations tracking
     pub loading: bool,
@@ -70,6 +71,7 @@ impl AppState {
             terminal_size: (80, 24),
             show_help: false,
             notifications: vec![],
+            confirm_dialog: None,
             loading: false,
         }
     }
