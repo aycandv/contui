@@ -55,6 +55,11 @@ pub struct LogViewState {
     pub scroll_offset: usize,
     pub follow: bool,
     pub max_lines: usize,
+    // Search functionality
+    pub search_pattern: Option<String>,
+    pub search_matches: Vec<usize>, // indices of matching log entries
+    pub current_match: Option<usize>, // index into search_matches
+    pub show_search_input: bool,
 }
 
 /// Panel focus areas
@@ -316,6 +321,10 @@ impl AppState {
             scroll_offset: 0,
             follow: true,
             max_lines: 1000,
+            search_pattern: None,
+            search_matches: vec![],
+            current_match: None,
+            show_search_input: false,
         });
     }
 
@@ -369,6 +378,91 @@ impl AppState {
             if log_view.follow {
                 // Jump to bottom when enabling follow
                 log_view.scroll_offset = log_view.logs.len().saturating_sub(1);
+            }
+        }
+    }
+
+    /// Show search input in log view
+    pub fn show_log_search(&mut self) {
+        if let Some(log_view) = &mut self.log_view {
+            log_view.show_search_input = true;
+            log_view.follow = false; // Disable follow when searching
+        }
+    }
+
+    /// Hide search input in log view
+    pub fn hide_log_search(&mut self) {
+        if let Some(log_view) = &mut self.log_view {
+            log_view.show_search_input = false;
+        }
+    }
+
+    /// Set search pattern and find matches
+    pub fn set_log_search(&mut self, pattern: &str) {
+        if let Some(log_view) = &mut self.log_view {
+            if pattern.is_empty() {
+                log_view.search_pattern = None;
+                log_view.search_matches.clear();
+                log_view.current_match = None;
+                return;
+            }
+            
+            log_view.search_pattern = Some(pattern.to_string());
+            log_view.search_matches.clear();
+            
+            // Find all matching log entries (case-insensitive)
+            let pattern_lower = pattern.to_lowercase();
+            for (i, entry) in log_view.logs.iter().enumerate() {
+                if entry.message.to_lowercase().contains(&pattern_lower) {
+                    log_view.search_matches.push(i);
+                }
+            }
+            
+            // Set current match to first one
+            log_view.current_match = if log_view.search_matches.is_empty() {
+                None
+            } else {
+                Some(0)
+            };
+            
+            // Scroll to first match if found
+            if let Some(&match_idx) = log_view.search_matches.first() {
+                log_view.scroll_offset = match_idx;
+            }
+        }
+    }
+
+    /// Clear search pattern
+    pub fn clear_log_search(&mut self) {
+        if let Some(log_view) = &mut self.log_view {
+            log_view.search_pattern = None;
+            log_view.search_matches.clear();
+            log_view.current_match = None;
+        }
+    }
+
+    /// Jump to next search match
+    pub fn next_search_match(&mut self) {
+        if let Some(log_view) = &mut self.log_view {
+            if let Some(current) = log_view.current_match {
+                let next = (current + 1) % log_view.search_matches.len();
+                log_view.current_match = Some(next);
+                log_view.scroll_offset = log_view.search_matches[next];
+            }
+        }
+    }
+
+    /// Jump to previous search match
+    pub fn prev_search_match(&mut self) {
+        if let Some(log_view) = &mut self.log_view {
+            if let Some(current) = log_view.current_match {
+                let prev = if current == 0 {
+                    log_view.search_matches.len() - 1
+                } else {
+                    current - 1
+                };
+                log_view.current_match = Some(prev);
+                log_view.scroll_offset = log_view.search_matches[prev];
             }
         }
     }

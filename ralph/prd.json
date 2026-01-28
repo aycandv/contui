@@ -1,463 +1,75 @@
 {
   "project": "DockMon",
-  "branchName": "ralph/US-012-log-search",
-  "description": "Advanced Docker TUI in Rust - Real-time container monitoring, log aggregation, and Docker Compose management",
+  "branchName": "ralph/US-013-log-search",
+  "description": "Log Search and Filtering - Search, filter, and highlight logs with regex support",
   "userStories": [
     {
-      "id": "US-001",
-      "title": "Project setup and dependencies",
-      "description": "As a developer, I need a working Rust project structure with all necessary dependencies for building a Docker TUI.",
+      "id": "US-013-1",
+      "title": "Add log search input and highlight matches",
+      "description": "As a developer, I want to search logs with regex and see matches highlighted so I can find specific events quickly.",
       "acceptanceCriteria": [
-        "Initialize git repository with git init",
-        "Create Cargo.toml with dependencies: ratatui, crossterm, bollard, tokio, serde, toml, chrono, regex, unicode-width, anyhow, thiserror",
-        "Add dev-dependencies: mockall, tokio-test for testing",
-        "Set up basic src/ directory structure with modules: config, core, docker, ui, state, utils",
-        "Create main.rs with tokio async main function",
-        "Add .gitignore for Rust project (target/, Cargo.lock, .env, etc.)",
-        "Create tests/ directory with integration test structure",
-        "Add .github/workflows/ci.yml for GitHub Actions CI",
-        "Create initial git commit: 'chore(project): initial project setup'",
-        "Verify project compiles with cargo check",
+        "Press '/' in log view to open search input (like vim)",
+        "Search input appears at bottom of log view",
+        "Type regex pattern and press Enter to search",
+        "Matching lines are highlighted in yellow",
+        "Press 'n' to jump to next match, 'N' for previous",
+        "Press 'Esc' to clear search",
+        "Search is case-insensitive by default",
         "Typecheck passes"
       ],
       "priority": 1,
-      "passes": true,
-      "notes": "Complete - 27 tests passing, CI configured"
+      "passes": false,
+      "notes": ""
     },
     {
-      "id": "US-002",
-      "title": "Core types and error handling",
-      "description": "As a developer, I need core data types and error handling infrastructure to represent Docker resources.",
+      "id": "US-013-2",
+      "title": "Add log level filtering",
+      "description": "As a developer, I want to filter logs by level (INFO, WARN, ERROR) to focus on important messages.",
       "acceptanceCriteria": [
-        "Define ContainerSummary, ContainerState, ContainerDetails types in core/types.rs",
-        "Define ImageSummary, ImageDetails types",
-        "Define VolumeSummary, NetworkSummary types",
-        "Create DockMonError enum with DockerError, UiError, ConfigError variants",
-        "Define Result<T> type alias",
-        "Implement Display trait for error types",
-        "Typecheck passes",
-        "Tests pass for error formatting"
+        "Press '1' to show only ERROR logs",
+        "Press '2' to show only WARN logs", 
+        "Press '3' to show only INFO logs",
+        "Press '0' to show all logs (default)",
+        "Filter state shown in log view title: 'Logs: [ERROR] container_name'",
+        "Auto-detect log levels from message content (contains 'ERROR:', 'WARN:', etc.)",
+        "Filter applies to existing logs in memory",
+        "Typecheck passes"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "Complete - types defined in core/ module"
+      "passes": false,
+      "notes": ""
     },
     {
-      "id": "US-003",
-      "title": "Docker client wrapper and connection",
-      "description": "As a developer, I need a Docker client wrapper to communicate with the Docker daemon.",
+      "id": "US-013-3",
+      "title": "Add timestamp filtering",
+      "description": "As a developer, I want to filter logs by time range to investigate issues from specific periods.",
       "acceptanceCriteria": [
-        "Create DockerClient struct wrapping bollard::Docker",
-        "Implement from_env() constructor using Docker::connect_with_local_defaults()",
-        "Implement with_host() for custom Docker hosts",
-        "Add ping() method for health checks",
-        "Create ConnectionInfo struct with version, api_version, os, arch fields",
-        "Implement error conversion from bollard errors to DockMonError",
-        "Add unit tests with mock Docker responses",
+        "Press 't' in log view to open time filter input",
+        "Input accepts '5m' (last 5 minutes), '1h' (last hour), or ISO timestamp",
+        "Only show logs newer than the specified time",
+        "Show 'Time filter: 5m' in log view title",
+        "Press 'T' to clear time filter",
         "Typecheck passes"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "Complete - DockerClient with from_env, with_host, ping"
+      "passes": false,
+      "notes": ""
     },
     {
-      "id": "US-004",
-      "title": "Container list and basic operations",
-      "description": "As a user, I want to view my Docker containers and perform basic lifecycle operations.",
+      "id": "US-013-4",
+      "title": "Export logs to file",
+      "description": "As a developer, I want to save filtered logs to a file for analysis or sharing.",
       "acceptanceCriteria": [
-        "Implement list_containers() in docker/containers.rs returning Vec<ContainerSummary>",
-        "Implement start_container(), stop_container(), restart_container()",
-        "Implement pause_container(), unpause_container(), kill_container()",
-        "Implement remove_container() with force and remove_volumes options",
-        "Add proper error handling for each operation",
-        "Create async integration tests",
+        "Press 'S' (shift+s) in log view to save logs",
+        "Prompt for filename (default: 'container_name_YYYY-MM-DD_HH-MM-SS.log')",
+        "Save currently visible (filtered) logs to file",
+        "Show confirmation: 'Saved 150 lines to container_name_... .log'",
+        "File saved in current directory",
         "Typecheck passes"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "Complete - all container operations implemented"
-    },
-    {
-      "id": "US-005",
-      "title": "Basic TUI layout and rendering",
-      "description": "As a user, I want a basic terminal interface to view the application.",
-      "acceptanceCriteria": [
-        "Create App struct with event loop in app.rs",
-        "Implement terminal initialization with crossterm",
-        "Create basic layout with header, main area, footer",
-        "Implement render() method using ratatui Frame",
-        "Handle terminal resize events",
-        "Implement clean shutdown on 'q' key",
-        "Typecheck passes",
-        "Manual test: application runs and displays layout"
-      ],
-      "priority": 5,
-      "passes": true,
-      "notes": "Complete - TUI with event loop, layout, and navigation"
-    },
-    {
-      "id": "US-006",
-      "title": "Container list widget",
-      "description": "As a user, I want to see my containers in a scrollable list with columns.",
-      "acceptanceCriteria": [
-        "Create ContainerList widget in ui/components/container_list.rs",
-        "Display columns: Status, ID, Name, Image, CPU%, Mem, Ports",
-        "Implement selection highlighting",
-        "Implement keyboard navigation (up/down arrows, j/k)",
-        "Connect to DockerClient to fetch real container data",
-        "Auto-refresh container list every 1 second",
-        "Handle empty state (no containers)",
-        "Typecheck passes"
-      ],
-      "priority": 6,
-      "passes": true,
-      "notes": "Complete - table view with selection and navigation"
-    },
-    {
-      "id": "US-007",
-      "title": "Container detail panel",
-      "description": "As a user, I want to see detailed information about a selected container.",
-      "acceptanceCriteria": [
-        "Create DetailPanel widget in ui/components/detail_panel.rs",
-        "Display container details: ID, Image, Status, Created time, Command",
-        "Show port mappings",
-        "Show mounted volumes",
-        "Show environment variables",
-        "Update detail view when selection changes",
-        "Style with appropriate colors (green for running, etc.)",
-        "Typecheck passes"
-      ],
-      "priority": 7,
-      "passes": true,
-      "notes": "Complete - split view with detail panel"
-    },
-    {
-      "id": "US-008",
-      "title": "Container actions and keybindings",
-      "description": "As a user, I want keyboard shortcuts to perform actions on containers.",
-      "acceptanceCriteria": [
-        "Implement 's' key to start/stop selected container",
-        "Implement 'r' key to restart container",
-        "Implement 'p' key to pause/unpause container",
-        "Implement 'd' key to remove container (with confirmation)",
-        "Implement 'k' key to kill container (with confirmation)",
-        "Show confirmation dialog for destructive actions",
-        "Add action feedback (notification/toast)",
-        "Typecheck passes"
-      ],
-      "priority": 8,
-      "passes": true,
-      "notes": "Complete - All keyboard actions implemented with centered confirmation popup, notifications with 3s timeout, auto-refresh every 2s"
-    },
-    {
-      "id": "US-009",
-      "title": "Image list and management",
-      "description": "As a user, I want to view and manage Docker images including pruning and inspecting layers.",
-      "acceptanceCriteria": [
-        "Implement list_images() in docker/images.rs returning Vec<ImageSummary>",
-        "Create ImageList widget with columns: Repository, Tag, ID, Size, Created",
-        "Display image list in Images tab with selection highlighting",
-        "Implement keyboard navigation (↑/↓ or j/k) for image list",
-        "Implement 'd' key to remove selected image with confirmation",
-        "Implement 'p' key to prune dangling images with confirmation",
-        "Implement 'i' key to inspect image (placeholder for future)",
-        "Show image count in header",
-        "Distinguish dangling images visually (<none>:<none> in yellow)",
-        "Auto-refresh image list every 2 seconds",
-        "Typecheck passes",
-        "Tests pass"
-      ],
-      "priority": 9,
-      "passes": true,
-      "notes": "Complete - All features implemented with confirmation dialogs, human-readable sizes, relative time display, 45 tests passing"
-    },
-    {
-      "id": "US-010",
-      "title": "Volume and Network management",
-      "description": "As a user, I want to view and manage Docker volumes and networks with list widgets and pruning.",
-      "acceptanceCriteria": [
-        "Implement list_volumes() in docker/volumes.rs returning Vec<VolumeSummary>",
-        "Implement list_networks() in docker/networks.rs returning Vec<NetworkSummary>",
-        "Create VolumeList widget with columns: Name, Driver, Scope, Mountpoint",
-        "Create NetworkList widget with columns: Name, Driver, Scope, Containers",
-        "Display volume list in Volumes tab with selection and navigation",
-        "Display network list in Networks tab with selection and navigation",
-        "Implement 'd' key to remove selected volume/network with confirmation",
-        "Implement 'p' key to prune unused volumes/networks with confirmation",
-        "Show volume/network count in header",
-        "Distinguish unused volumes visually (yellow)",
-        "Distinguish system networks visually (cyan for bridge/host/none)",
-        "Auto-refresh every 2 seconds",
-        "Typecheck passes",
-        "Tests pass"
-      ],
-      "priority": 10,
-      "passes": true,
-      "notes": "Complete - Volume and Network list widgets with delete/prune operations, visual distinctions, 47 tests passing"
-    },
-    {
-      "id": "US-011",
-      "title": "Real-time log streaming",
-      "description": "As a user, I want to view real-time logs from containers with streaming and color-coded output.",
-      "acceptanceCriteria": [
-        "Implement stream_logs() in docker/logs.rs using bollard logs API",
-        "Create LogViewer widget in ui/components/log_viewer.rs",
-        "Implement 'l' key to open logs for selected container",
-        "Show logs with timestamps",
-        "Color-code stderr vs stdout (white vs red)",
-        "Implement log following toggle ('f' key)",
-        "Implement scroll up/down in log view (arrow keys/PgUp/PgDn)",
-        "Auto-scroll to bottom when following enabled",
-        "Press 'q' or Esc to exit log view",
-        "Show container name in log view header with [FOLLOW] indicator",
-        "Typecheck passes",
-        "Tests pass"
-      ],
-      "priority": 11,
-      "passes": true,
-      "notes": "Complete - Real-time log streaming with follow mode, color-coded output (white=stdout, red=stderr), 48 tests passing"
-    },
-    {
-      "id": "US-012",
-      "title": "Log search and filtering",
-      "description": "As a user, I want to search through container logs.",
-      "acceptanceCriteria": [
-        "Implement '/' key to activate search mode in log viewer",
-        "Implement regex-based search",
-        "Highlight search matches in log lines",
-        "Implement 'n' key to jump to next match",
-        "Implement 'N' key to jump to previous match",
-        "Show search match count",
-        "Implement 't' key to toggle timestamps",
-        "Typecheck passes"
-      ],
-      "priority": 12,
       "passes": false,
-      "notes": "Enhances log viewing"
-    },
-    {
-      "id": "US-013",
-      "title": "Container stats and monitoring",
-      "description": "As a user, I want to see real-time resource usage for containers.",
-      "acceptanceCriteria": [
-        "Implement stream_stats() in docker/stats.rs",
-        "Create StatsChart widget using ratatui charts",
-        "Display CPU percentage chart (braille patterns)",
-        "Display memory usage chart",
-        "Show network I/O statistics",
-        "Implement 'c' key to show stats panel",
-        "Auto-update stats every 1 second",
-        "Typecheck passes"
-      ],
-      "priority": 13,
-      "passes": false,
-      "notes": "Monitoring capability"
-    },
-    {
-      "id": "US-014",
-      "title": "Docker Compose support",
-      "description": "As a user, I want to manage Docker Compose projects.",
-      "acceptanceCriteria": [
-        "Create ComposeClient for docker compose CLI operations",
-        "Implement compose file detection (docker-compose.yml)",
-        "Create ComposeProject and ComposeService types",
-        "Add Compose tab to main navigation",
-        "Display compose projects and their services",
-        "Implement up/down operations for projects",
-        "Show service status (running/stopped replicas)",
-        "Typecheck passes"
-      ],
-      "priority": 14,
-      "passes": false,
-      "notes": "Compose orchestration"
-    },
-    {
-      "id": "US-015",
-      "title": "Configuration system",
-      "description": "As a user, I want to customize the application behavior.",
-      "acceptanceCriteria": [
-        "Create Config struct with GeneralConfig, UiConfig, DockerConfig",
-        "Implement config file loading from ~/.config/dockmon/config.toml",
-        "Support default values for all config options",
-        "Implement Config::load() and Config::save() methods",
-        "Add CLI argument parsing with clap",
-        "Support --config flag for custom config path",
-        "Typecheck passes"
-      ],
-      "priority": 15,
-      "passes": false,
-      "notes": "Customization foundation"
-    },
-    {
-      "id": "US-016",
-      "title": "Customizable keybindings",
-      "description": "As a power user, I want to customize keyboard shortcuts.",
-      "acceptanceCriteria": [
-        "Create KeyBindings config section",
-        "Define default keybinding map",
-        "Load custom keybindings from config file",
-        "Apply custom keybindings at runtime",
-        "Create keybinding helper to look up actions",
-        "Update help panel dynamically from keybindings",
-        "Typecheck passes"
-      ],
-      "priority": 16,
-      "passes": false,
-      "notes": "Power user feature"
-    },
-    {
-      "id": "US-017",
-      "title": "Theme and color customization",
-      "description": "As a user, I want to customize the color scheme.",
-      "acceptanceCriteria": [
-        "Create Theme struct with color definitions",
-        "Implement dark, light, and high-contrast themes",
-        "Load theme from config",
-        "Apply theme colors throughout UI",
-        "Support custom color overrides in config",
-        "Typecheck passes"
-      ],
-      "priority": 17,
-      "passes": false,
-      "notes": "Visual customization"
-    },
-    {
-      "id": "US-018",
-      "title": "Help panel and documentation",
-      "description": "As a user, I want in-app help to learn keyboard shortcuts.",
-      "acceptanceCriteria": [
-        "Create HelpPanel widget",
-        "Implement '?' key to toggle help overlay",
-        "Display all keyboard shortcuts organized by category",
-        "Show contextual help based on current tab",
-        "Style help panel with clear sections",
-        "Close help on any key press",
-        "Typecheck passes"
-      ],
-      "priority": 18,
-      "passes": false,
-      "notes": "User assistance"
-    },
-    {
-      "id": "US-019",
-      "title": "Registry integration - Docker Hub search",
-      "description": "As a user, I want to search Docker Hub for images from the TUI.",
-      "acceptanceCriteria": [
-        "Create DockerHubClient for Docker Hub API",
-        "Implement search_images() method",
-        "Create RegistrySearch widget",
-        "Implement '/' key in Images tab to search",
-        "Display search results with name, description, stars",
-        "Implement pull image with progress display",
-        "Show pull progress in status bar",
-        "Typecheck passes"
-      ],
-      "priority": 19,
-      "passes": false,
-      "notes": "Registry integration"
-    },
-    {
-      "id": "US-020",
-      "title": "Exec into containers",
-      "description": "As a user, I want to execute commands inside running containers.",
-      "acceptanceCriteria": [
-        "Implement exec_command() in docker/containers.rs",
-        "Create ExecInstance for managing exec sessions",
-        "Implement 'x' key to exec into selected container",
-        "Support common shells: /bin/sh, /bin/bash",
-        "Handle interactive terminal passthrough",
-        "Return to TUI after exec exits",
-        "Typecheck passes"
-      ],
-      "priority": 20,
-      "passes": false,
-      "notes": "Advanced container interaction"
-    },
-    {
-      "id": "US-021",
-      "title": "Filtering and search across resources",
-      "description": "As a user, I want to filter containers and images.",
-      "acceptanceCriteria": [
-        "Create FilterBar widget",
-        "Implement '/' key to activate filter in list views",
-        "Support filtering by name (fuzzy matching)",
-        "Support filtering by status for containers",
-        "Show active filter indicator",
-        "Implement 'esc' to clear filter",
-        "Typecheck passes"
-      ],
-      "priority": 21,
-      "passes": false,
-      "notes": "Navigation enhancement"
-    },
-    {
-      "id": "US-022",
-      "title": "Notifications and status messages",
-      "description": "As a user, I want feedback when actions complete or fail.",
-      "acceptanceCriteria": [
-        "Create Notification struct with message, level, timestamp",
-        "Create notification queue in AppState",
-        "Display notifications in footer/toast",
-        "Implement auto-dismiss after timeout",
-        "Show success/error icons",
-        "Implement clear notifications action",
-        "Typecheck passes"
-      ],
-      "priority": 22,
-      "passes": false,
-      "notes": "User feedback"
-    },
-    {
-      "id": "US-023",
-      "title": "System dashboard",
-      "description": "As a user, I want to see system-wide Docker information.",
-      "acceptanceCriteria": [
-        "Add System tab to navigation",
-        "Display Docker daemon info (version, driver, etc.)",
-        "Show system resource usage summary",
-        "Display total containers, images, volumes, networks counts",
-        "Show disk usage breakdown",
-        "Implement prune all unused data action",
-        "Typecheck passes"
-      ],
-      "priority": 23,
-      "passes": false,
-      "notes": "System overview"
-    },
-    {
-      "id": "US-024",
-      "title": "Mouse support",
-      "description": "As a user, I want to use mouse for navigation.",
-      "acceptanceCriteria": [
-        "Enable mouse capture with crossterm",
-        "Handle mouse click events",
-        "Implement click to select container",
-        "Implement click to switch tabs",
-        "Implement scroll wheel for scrolling lists",
-        "Add config option to disable mouse",
-        "Typecheck passes"
-      ],
-      "priority": 24,
-      "passes": false,
-      "notes": "Accessibility feature"
-    },
-    {
-      "id": "US-025",
-      "title": "Release packaging and documentation",
-      "description": "As a maintainer, I want to package the application for distribution.",
-      "acceptanceCriteria": [
-        "Create README.md with installation and usage instructions",
-        "Write Cargo.toml with proper metadata",
-        "Create Dockerfile for running dockmon in container",
-        "Add install script for easy installation",
-        "Write CHANGELOG.md",
-        "Create GitHub Actions workflow for CI/CD",
-        "Typecheck passes",
-        "Binary builds and runs correctly"
-      ],
-      "priority": 25,
-      "passes": false,
-      "notes": "Distribution and docs"
+      "notes": ""
     }
   ]
 }

@@ -220,6 +220,13 @@ impl UiApp {
 
     /// Handle log view keys
     fn handle_log_view_key(&mut self, key: KeyEvent) -> UiAction {
+        // Handle search input mode first
+        if let Some(ref log_view) = self.state.log_view {
+            if log_view.show_search_input {
+                return self.handle_log_search_key(key);
+            }
+        }
+        
         match key.code {
             // Exit log view
             KeyCode::Char('q') | KeyCode::Esc => {
@@ -237,6 +244,21 @@ impl UiApp {
             // Toggle follow mode
             KeyCode::Char('f') => {
                 self.state.toggle_log_follow();
+                UiAction::None
+            }
+            // Open search
+            KeyCode::Char('/') => {
+                self.state.show_log_search();
+                UiAction::None
+            }
+            // Next search match
+            KeyCode::Char('n') => {
+                self.state.next_search_match();
+                UiAction::None
+            }
+            // Previous search match
+            KeyCode::Char('N') => {
+                self.state.prev_search_match();
                 UiAction::None
             }
             // Scroll up
@@ -268,6 +290,24 @@ impl UiApp {
                 UiAction::None
             }
             _ => UiAction::None,
+        }
+    }
+    
+    /// Handle keys when in log search input mode
+    fn handle_log_search_key(&mut self, key: KeyEvent) -> UiAction {
+        use ratatui::crossterm::event::KeyCode;
+        
+        match key.code {
+            KeyCode::Esc => {
+                self.state.hide_log_search();
+                self.state.clear_log_search();
+                UiAction::None
+            }
+            KeyCode::Enter => {
+                self.state.hide_log_search();
+                UiAction::None
+            }
+            _ => UiAction::None, // TODO: Handle character input for search
         }
     }
 
