@@ -561,9 +561,9 @@ impl App {
         if let Some((container_id, handle)) = self.pending_log_fetch.take() {
             if handle.is_finished() {
                 info!("Log fetch task finished for container '{}'", container_id);
-                // Task completed, get the result
-                match handle.await {
-                    Ok(Ok(entries)) => {
+                // Task completed, get the result with a short timeout as safety
+                match tokio::time::timeout(Duration::from_millis(100), handle).await {
+                    Ok(Ok(Ok(entries))) => {
                         let count = entries.len();
                         info!("Processing {} log entries for container {}", count, container_id);
                         if count == 0 {
@@ -578,17 +578,22 @@ impl App {
                             self.state.add_notification(format!("Loaded {} log lines", count), NotificationLevel::Success);
                         }
                     }
-                    Ok(Err(e)) => {
+                    Ok(Ok(Err(e))) => {
                         warn!("Failed to fetch logs for container {}: {}", container_id, e);
                         self.state.add_notification(format!("Failed to fetch logs: {}", e), NotificationLevel::Error);
                     }
-                    Err(e) => {
+                    Ok(Err(e)) => {
                         warn!("Log fetch task failed for container {}: {}", container_id, e);
                         self.state.add_notification("Log fetch failed", NotificationLevel::Error);
+                    }
+                    Err(_) => {
+                        warn!("Timeout waiting for log fetch task result");
+                        self.state.add_notification("Log fetch timeout", NotificationLevel::Error);
                     }
                 }
             } else {
                 // Task still running, put it back
+                debug!("Log fetch still running for container '{}'", container_id);
                 self.pending_log_fetch = Some((container_id, handle));
             }
         }
