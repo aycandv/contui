@@ -11,8 +11,8 @@ use std::time::Duration;
 use tracing::{debug, error, info, warn};
 
 use crate::config::Config;
-use crate::core::{ConnectionInfo, NotificationLevel};
-use crate::docker::DockerClient;
+use crate::core::{ConnectionInfo, NotificationLevel, Result as DockMonResult};
+use crate::docker::{DockerClient, LogEntry};
 use crate::state::AppState;
 use crate::ui::{UiAction, UiApp};
 
@@ -22,6 +22,8 @@ pub struct App {
     config: Config,
     state: AppState,
     docker_client: Option<DockerClient>,
+    /// Pending log fetch task (container_id, join_handle)
+    pending_log_fetch: Option<(String, tokio::task::JoinHandle<DockMonResult<Vec<LogEntry>>>)>,
 }
 
 impl App {
@@ -48,6 +50,7 @@ impl App {
             config,
             state,
             docker_client,
+            pending_log_fetch: None,
         })
     }
 
@@ -151,6 +154,9 @@ impl App {
 
             // Periodic tasks (every 250ms)
             if last_tick.elapsed() >= tick_rate {
+                // Check for completed log fetches
+                self.check_pending_log_fetch().await;
+                
                 // Refresh data periodically (every 2 seconds)
                 if last_data_refresh.elapsed() >= data_refresh_rate {
                     self.refresh_data().await;
@@ -202,8 +208,8 @@ impl App {
                         self.state.add_notification("Loading logs...", NotificationLevel::Info);
                     }
                 }
-                // Start log streaming
-                self.start_log_streaming(id).await;
+                // Start log streaming (non-blocking)
+                self.start_log_streaming(id);
             }
             UiAction::RemoveImage(id) => {
                 self.remove_image(&id).await;
@@ -518,50 +524,66 @@ impl App {
         }
     }
 
-    /// Fetch logs from a container and populate log view
-    async fn start_log_streaming(&mut self, container_id: String) {
+    /// Start fetching logs from a container (non-blocking, spawns background task)
+    fn start_log_streaming(&mut self, container_id: String) {
         if let Some(client) = &self.docker_client {
-            info!("Fetching logs for container '{}'", container_id);
+            // Cancel any existing pending fetch
+            if let Some((id, handle)) = self.pending_log_fetch.take() {
+                handle.abort();
+                info!("Cancelled pending log fetch for container '{}'", id);
+            }
             
-            // Clone client for the blocking task
+            info!("Starting log fetch for container '{}'", container_id);
+            
+            // Clone for the async task
             let client = client.clone();
             let container_id_clone = container_id.clone();
             
-            // Run log fetch in a blocking task to avoid freezing the UI
-            let fetch_result = tokio::task::spawn_blocking(move || {
-                let rt = tokio::runtime::Handle::current();
-                rt.block_on(async move {
-                    client.fetch_logs(&container_id_clone, 100).await
-                })
-            }).await;
+            // Spawn background task to fetch logs
+            let handle = tokio::spawn(async move {
+                client.fetch_logs(&container_id_clone, 100).await
+            });
             
-            match fetch_result {
-                Ok(Ok(entries)) => {
-                    let count = entries.len();
-                    info!("Fetched {} log entries for container {}", count, container_id);
-                    if count == 0 {
-                        self.state.add_notification(
-                            format!("No logs found for container {}", &container_id[..12.min(container_id.len())]), 
-                            NotificationLevel::Warning
-                        );
-                    } else {
-                        for entry in entries {
-                            self.state.add_log_entry(entry);
-                        }
-                        self.state.add_notification(format!("Loaded {} log lines", count), NotificationLevel::Success);
-                    }
-                }
-                Ok(Err(e)) => {
-                    warn!("Failed to fetch logs for container {}: {}", container_id, e);
-                    self.state.add_notification(format!("Failed to fetch logs: {}", e), NotificationLevel::Error);
-                }
-                Err(e) => {
-                    warn!("Log fetch task panicked for container {}: {}", container_id, e);
-                    self.state.add_notification("Log fetch failed (timeout)", NotificationLevel::Error);
-                }
-            }
+            self.pending_log_fetch = Some((container_id, handle));
         } else {
             self.state.add_notification("Not connected to Docker", NotificationLevel::Error);
+        }
+    }
+    
+    /// Check if pending log fetch has completed and update state
+    async fn check_pending_log_fetch(&mut self) {
+        if let Some((container_id, handle)) = self.pending_log_fetch.take() {
+            if handle.is_finished() {
+                // Task completed, get the result
+                match handle.await {
+                    Ok(Ok(entries)) => {
+                        let count = entries.len();
+                        info!("Fetched {} log entries for container {}", count, container_id);
+                        if count == 0 {
+                            self.state.add_notification(
+                                format!("No logs found for container {}", &container_id[..12.min(container_id.len())]), 
+                                NotificationLevel::Warning
+                            );
+                        } else {
+                            for entry in entries {
+                                self.state.add_log_entry(entry);
+                            }
+                            self.state.add_notification(format!("Loaded {} log lines", count), NotificationLevel::Success);
+                        }
+                    }
+                    Ok(Err(e)) => {
+                        warn!("Failed to fetch logs for container {}: {}", container_id, e);
+                        self.state.add_notification(format!("Failed to fetch logs: {}", e), NotificationLevel::Error);
+                    }
+                    Err(e) => {
+                        warn!("Log fetch task failed for container {}: {}", container_id, e);
+                        self.state.add_notification("Log fetch failed", NotificationLevel::Error);
+                    }
+                }
+            } else {
+                // Task still running, put it back
+                self.pending_log_fetch = Some((container_id, handle));
+            }
         }
     }
 }
