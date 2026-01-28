@@ -209,13 +209,13 @@
         "Implement scroll up/down in log view (arrow keys/PgUp/PgDn)",
         "Auto-scroll to bottom when following enabled",
         "Press 'q' or Esc to exit log view",
-        "Show container name in log view header",
+        "Show container name in log view header with [FOLLOW] indicator",
         "Typecheck passes",
         "Tests pass"
       ],
       "priority": 11,
-      "passes": false,
-      "notes": "Real-time log streaming with follow mode and color-coded output"
+      "passes": true,
+      "notes": "Complete - Real-time log streaming with follow mode, color-coded output (white=stdout, red=stderr), 48 tests passing"
     },
     {
       "id": "US-012",

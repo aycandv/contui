@@ -88,17 +88,18 @@ Core Features (Docker Operations)
 
 Advanced Features (Logs & Monitoring)
 --------------------------------------
-[ ] US-011: Real-time log streaming
+[X] US-011: Real-time log streaming
     Dependencies: US-006
-    Status: In Progress
-    Branch: ralph/US-011-log-streaming
+    Status: Complete
+    Commit: 6f5affb
     Notes: Real-time log streaming features:
       - stream_logs() using bollard logs API
       - LogViewer widget with timestamps
       - Color-code stdout (white) vs stderr (red)
       - 'f' toggle follow mode, auto-scroll when following
-      - Arrow keys/PgUp/PgDn for scrolling
+      - Arrow keys/PgUp/PgDn for scrolling, Home/End for top/bottom
       - 'q' or Esc to exit log view
+      - 48 tests passing
 
 [ ] US-012: Log search and filtering
     Dependencies: US-011
@@ -186,6 +187,14 @@ Progress: [███▌░░░░░░] 36%
 
 === Recent Activity ===
 (Most recent first)
+
+- 2024-01-28: US-011 Complete - Real-time log streaming
+  Commit: 6f5affb feat(US-011): implement real-time log streaming
+  - stream_logs() using bollard logs API
+  - LogViewer widget with timestamps and [FOLLOW] indicator
+  - Color-coded output: white=stdout, red=stderr
+  - 'f' toggle follow, arrow keys/PgUp/PgDn scroll
+  - 48 tests passing
 
 - 2024-01-28: US-010 Complete - Volume and Network management
   Commit: 288f875 feat(US-010): implement volume and network management
