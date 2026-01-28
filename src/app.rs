@@ -156,7 +156,7 @@ impl App {
             if last_tick.elapsed() >= tick_rate {
                 // Check for completed log fetches (only if there's a pending one)
                 if self.pending_log_fetch.is_some() {
-                    self.check_pending_log_fetch().await;
+                    self.check_pending_log_fetch();
                 }
                 
                 // Refresh data periodically (every 2 seconds)
@@ -557,15 +557,17 @@ impl App {
     }
     
     /// Check if pending log fetch has completed and update state
-    async fn check_pending_log_fetch(&mut self) {
+    fn check_pending_log_fetch(&mut self) {
         if let Some((container_id, handle)) = self.pending_log_fetch.take() {
+            // Use is_finished() to check without blocking
             if handle.is_finished() {
-                info!("Log fetch task finished for container '{}'", container_id);
-                // Task completed, get the result with a short timeout as safety
-                match tokio::time::timeout(Duration::from_millis(100), handle).await {
-                    Ok(Ok(Ok(entries))) => {
+                // Task completed - use block_on to get result since we're in a sync context
+                match tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current().block_on(handle)
+                }) {
+                    Ok(Ok(entries)) => {
                         let count = entries.len();
-                        info!("Processing {} log entries for container {}", count, container_id);
+                        info!("Fetched {} log entries for container {}", count, container_id);
                         if count == 0 {
                             self.state.add_notification(
                                 format!("No logs found for container {}", &container_id[..12.min(container_id.len())]), 
@@ -578,22 +580,17 @@ impl App {
                             self.state.add_notification(format!("Loaded {} log lines", count), NotificationLevel::Success);
                         }
                     }
-                    Ok(Ok(Err(e))) => {
+                    Ok(Err(e)) => {
                         warn!("Failed to fetch logs for container {}: {}", container_id, e);
                         self.state.add_notification(format!("Failed to fetch logs: {}", e), NotificationLevel::Error);
                     }
-                    Ok(Err(e)) => {
-                        warn!("Log fetch task failed for container {}: {}", container_id, e);
+                    Err(e) => {
+                        warn!("Log fetch task panicked for container {}: {}", container_id, e);
                         self.state.add_notification("Log fetch failed", NotificationLevel::Error);
-                    }
-                    Err(_) => {
-                        warn!("Timeout waiting for log fetch task result");
-                        self.state.add_notification("Log fetch timeout", NotificationLevel::Error);
                     }
                 }
             } else {
-                // Task still running, put it back
-                debug!("Log fetch still running for container '{}'", container_id);
+                // Not finished, put it back
                 self.pending_log_fetch = Some((container_id, handle));
             }
         }
