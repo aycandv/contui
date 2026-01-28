@@ -117,7 +117,7 @@ impl App {
                 self.handle_ui_action(action).await;
                 
                 // Then sync UI state changes (confirm_dialog, show_help, etc.) to self.state
-                // We need to preserve: containers, notifications (from action handler)
+                // We need to preserve: containers, notifications, log_view (from action handler)
                 // We need to sync from UI: confirm_dialog, show_help, current_tab, etc.
                 let mut ui_state = ui_app.state;
                 
@@ -129,6 +129,7 @@ impl App {
                 ui_state.images = self.state.images.clone();
                 ui_state.volumes = self.state.volumes.clone();
                 ui_state.networks = self.state.networks.clone();
+                ui_state.log_view = self.state.log_view.clone(); // PRESERVE LOG VIEW!
                 
                 self.state = ui_state;
 
