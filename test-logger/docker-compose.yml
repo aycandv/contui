@@ -5,5 +5,8 @@ services:
     build: .
     image: test-logger:latest
     container_name: test-logger
+    # Ensure logs are available
+    tty: true
+    stdin_open: true
     # Keep the container running
     restart: unless-stopped
