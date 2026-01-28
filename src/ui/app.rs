@@ -701,8 +701,8 @@ impl UiApp {
 
     /// Render help overlay
     fn render_help_overlay(&self, frame: &mut Frame, area: Rect) {
-        // Create a centered popup (60% width, 70% height)
-        let popup_area = Self::centered_rect(60, 70, area);
+        // Create a centered popup (70% width, 80% height) - larger to fit all content
+        let popup_area = Self::centered_rect(70, 80, area);
 
         // Clear the background
         frame.render_widget(Clear, popup_area);
@@ -710,26 +710,29 @@ impl UiApp {
         let help_text = r#"Keyboard Shortcuts
 
 Navigation:
-  ← / → or ↑ / ↓    Switch between tabs (circular)
-  1 - 6             Jump directly to tab (Containers, Images, etc.)
-  Tab               Move to next panel
-  Shift+Tab         Move to previous panel
+  ←/→ or 1-6       Switch between tabs
+  Tab              Next panel / Shift+Tab Previous
 
 Containers Tab:
-  ↑ / ↓ or j / k    Select container in list
-  s                 Start/Stop selected container
-  r                 Restart selected container
-  p                 Pause/Unpause selected container
-  k                 Kill selected container
-  d                 Delete selected container
-  l                 View container logs
+  ↑/↓ or j/k       Select container
+  s                Start/Stop container
+  r                Restart container
+  p                Pause/Unpause container
+  k                Kill container
+  d                Delete container
+  l                View logs
+
+Images Tab:
+  ↑/↓ or j/k       Select image
+  d                Delete image
+  p                Prune dangling images
+  i                Inspect image
 
 Global:
-  q                 Quit application
-  Ctrl+C            Force quit
-  ? or h            Toggle this help screen
+  q or Ctrl+C      Quit
+  ? or h           Toggle help
 
-Press any key to close this help...
+Press any key to close...
 "#;
 
         let help = Paragraph::new(help_text)
