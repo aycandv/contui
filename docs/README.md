@@ -75,6 +75,19 @@ Docker API integration details:
 - Error handling
 - Rate limiting and caching
 
+### 6. Testing Strategy
+**Location**: `/docs/TESTING.md`
+
+Comprehensive testing approach:
+- Automated testing capabilities and limitations
+- Unit test patterns with examples
+- UI component testing with TestBackend
+- Integration tests for Docker operations
+- Mocking strategies for Docker client
+- CI/CD workflow configuration
+- Performance testing
+- Coverage goals
+
 ### 6. Ralph PRD (Autonomous Agent Format)
 **Location**: `/ralph/prd.json`
 
@@ -92,6 +105,7 @@ Ralph-compatible PRD with 25 user stories:
 4. **For data structures**: Check `/docs/DATA_MODELS.md`
 5. **For UI implementation**: Follow `/docs/UI_DESIGN.md`
 6. **For API integration**: Use `/docs/API_INTEGRATION.md`
+7. **For testing**: Reference `/docs/TESTING.md`
 
 ## Project Structure
 
