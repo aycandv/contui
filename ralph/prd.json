@@ -39,8 +39,8 @@
         "Tests pass for error formatting"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": "Core types needed before Docker client"
+      "passes": true,
+      "notes": "Complete - types defined in core/ module"
     },
     {
       "id": "US-003",
@@ -57,8 +57,8 @@
         "Typecheck passes"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": "Prerequisite for all container operations"
+      "passes": true,
+      "notes": "Complete - DockerClient with from_env, with_host, ping"
     },
     {
       "id": "US-004",
@@ -74,8 +74,8 @@
         "Typecheck passes"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": "Core container functionality"
+      "passes": true,
+      "notes": "Complete - all container operations implemented"
     },
     {
       "id": "US-005",
