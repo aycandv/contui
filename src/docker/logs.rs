@@ -16,6 +16,42 @@ pub struct LogEntry {
 }
 
 impl DockerClient {
+    /// Fetch the last N lines of logs from a container (non-streaming)
+    pub async fn fetch_logs(&self, id: &str, tail: usize) -> Result<Vec<LogEntry>> {
+        use crate::core::DockMonError;
+        
+        debug!("Fetching last {} log lines for container {}", tail, id);
+
+        let options = LogsOptions {
+            stdout: true,
+            stderr: true,
+            timestamps: true,
+            follow: false,
+            tail: tail.to_string(),
+            ..Default::default()
+        };
+
+        let mut stream = self.inner().logs(id, Some(options));
+        let mut entries = Vec::new();
+
+        while let Some(result) = stream.next().await {
+            match result {
+                Ok(log) => {
+                    if let Ok(entry) = Self::parse_log_entry(log) {
+                        entries.push(entry);
+                    }
+                }
+                Err(e) => {
+                    debug!("Error reading log: {}", e);
+                    // Continue reading other logs
+                }
+            }
+        }
+
+        debug!("Fetched {} log entries", entries.len());
+        Ok(entries)
+    }
+
     /// Stream logs from a container
     pub fn stream_logs(
         &self,
@@ -61,13 +97,18 @@ impl DockerClient {
         };
 
         // Parse timestamp from message (format: "2024-01-28T10:30:00.123456789Z message")
-        let (timestamp, message) = if let Some(pos) = message.find(' ') {
-            let ts_str = &message[..pos];
-            let msg = message[pos + 1..].to_string();
-            let timestamp = chrono::DateTime::parse_from_rfc3339(ts_str)
-                .ok()
-                .map(|dt| dt.with_timezone(&chrono::Utc));
-            (timestamp, msg)
+        // Some logs might not have timestamps, so handle that case
+        let (timestamp, message) = if message.len() > 20 && message.contains('T') {
+            if let Some(pos) = message.find(' ') {
+                let ts_str = &message[..pos];
+                let msg = message[pos + 1..].to_string();
+                let timestamp = chrono::DateTime::parse_from_rfc3339(ts_str)
+                    .ok()
+                    .map(|dt| dt.with_timezone(&chrono::Utc));
+                (timestamp, msg)
+            } else {
+                (None, message)
+            }
         } else {
             (None, message)
         };

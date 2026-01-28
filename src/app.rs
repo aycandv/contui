@@ -500,24 +500,22 @@ impl App {
         }
     }
 
-    /// Start streaming logs from a container
+    /// Fetch logs from a container and populate log view
     async fn start_log_streaming(&mut self, container_id: String) {
         if let Some(client) = &self.docker_client {
-            info!("Starting log streaming for container {}", container_id);
+            info!("Fetching logs for container {}", container_id);
             
-            // For now, just fetch the last 100 lines of logs
-            // Real-time streaming would require a background task
-            let mut stream = client.stream_logs(&container_id, false, 100);
-            
-            while let Some(result) = stream.next().await {
-                match result {
-                    Ok(entry) => {
+            // Fetch the last 100 lines of logs
+            match client.fetch_logs(&container_id, 100).await {
+                Ok(entries) => {
+                    info!("Fetched {} log entries", entries.len());
+                    for entry in entries {
                         self.state.add_log_entry(entry);
                     }
-                    Err(e) => {
-                        warn!("Error reading log: {}", e);
-                        break;
-                    }
+                }
+                Err(e) => {
+                    warn!("Failed to fetch logs: {}", e);
+                    self.state.add_notification(format!("Failed to fetch logs: {}", e), NotificationLevel::Error);
                 }
             }
         }

@@ -37,6 +37,15 @@ pub fn render_log_viewer(frame: &mut Frame, area: Rect, state: &LogViewState) {
     let visible_lines = inner_area.height as usize;
     let total_lines = state.logs.len();
 
+    // Show message if no logs
+    if total_lines == 0 {
+        let no_logs = Paragraph::new("No logs available. Press 'q' to close.")
+            .style(Style::default().fg(Color::Yellow))
+            .alignment(ratatui::layout::Alignment::Center);
+        frame.render_widget(no_logs, inner_area);
+        return;
+    }
+
     // Calculate start index based on scroll offset
     let start_idx = if total_lines > visible_lines {
         state.scroll_offset.saturating_sub(visible_lines / 2)
