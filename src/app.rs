@@ -534,13 +534,13 @@ impl App {
             }
             
             info!("Starting log fetch for container '{}'", container_id);
+            self.state.add_notification("Fetching logs...", NotificationLevel::Info);
             
             // Clone for the blocking task
             let client = client.clone();
             let container_id_clone = container_id.clone();
             
             // Spawn in blocking thread to fully isolate from async runtime
-            // This is necessary because bollard's logs() can block the reactor
             let handle = tokio::task::spawn_blocking(move || {
                 // Create a new runtime for this blocking thread
                 let rt = tokio::runtime::Builder::new_current_thread()
@@ -563,11 +563,12 @@ impl App {
     async fn check_pending_log_fetch(&mut self) {
         if let Some((container_id, handle)) = self.pending_log_fetch.take() {
             if handle.is_finished() {
+                info!("Log fetch task finished for container '{}'", container_id);
                 // Task completed, get the result
                 match handle.await {
                     Ok(Ok(entries)) => {
                         let count = entries.len();
-                        info!("Fetched {} log entries for container {}", count, container_id);
+                        info!("Processing {} log entries for container {}", count, container_id);
                         if count == 0 {
                             self.state.add_notification(
                                 format!("No logs found for container {}", &container_id[..12.min(container_id.len())]), 
