@@ -154,8 +154,10 @@ impl App {
 
             // Periodic tasks (every 250ms)
             if last_tick.elapsed() >= tick_rate {
-                // Check for completed log fetches
-                self.check_pending_log_fetch().await;
+                // Check for completed log fetches (only if there's a pending one)
+                if self.pending_log_fetch.is_some() {
+                    self.check_pending_log_fetch().await;
+                }
                 
                 // Refresh data periodically (every 2 seconds)
                 if last_data_refresh.elapsed() >= data_refresh_rate {
