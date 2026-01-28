@@ -44,6 +44,9 @@ pub struct AppState {
 
     // Async operations tracking
     pub loading: bool,
+    
+    // DEBUG: test flag for log view freeze issue
+    pub test_log_view_flag: bool,
 }
 
 /// Log view state
@@ -100,6 +103,7 @@ impl AppState {
             log_view: None,
             confirm_dialog: None,
             loading: false,
+            test_log_view_flag: false,
         }
     }
 
