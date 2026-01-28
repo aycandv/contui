@@ -523,9 +523,20 @@ impl App {
         if let Some(client) = &self.docker_client {
             info!("Fetching logs for container '{}'", container_id);
             
-            // Fetch the last 100 lines of logs
-            match client.fetch_logs(&container_id, 100).await {
-                Ok(entries) => {
+            // Clone client for the blocking task
+            let client = client.clone();
+            let container_id_clone = container_id.clone();
+            
+            // Run log fetch in a blocking task to avoid freezing the UI
+            let fetch_result = tokio::task::spawn_blocking(move || {
+                let rt = tokio::runtime::Handle::current();
+                rt.block_on(async move {
+                    client.fetch_logs(&container_id_clone, 100).await
+                })
+            }).await;
+            
+            match fetch_result {
+                Ok(Ok(entries)) => {
                     let count = entries.len();
                     info!("Fetched {} log entries for container {}", count, container_id);
                     if count == 0 {
@@ -540,9 +551,13 @@ impl App {
                         self.state.add_notification(format!("Loaded {} log lines", count), NotificationLevel::Success);
                     }
                 }
-                Err(e) => {
+                Ok(Err(e)) => {
                     warn!("Failed to fetch logs for container {}: {}", container_id, e);
                     self.state.add_notification(format!("Failed to fetch logs: {}", e), NotificationLevel::Error);
+                }
+                Err(e) => {
+                    warn!("Log fetch task panicked for container {}: {}", container_id, e);
+                    self.state.add_notification("Log fetch failed (timeout)", NotificationLevel::Error);
                 }
             }
         } else {
