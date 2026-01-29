@@ -556,6 +556,17 @@ impl App {
                     warn!("Failed to load networks: {}", e);
                 }
             }
+
+            // Fetch disk usage
+            match client.get_disk_usage().await {
+                Ok(disk_usage) => {
+                    self.state.update_disk_usage(disk_usage);
+                    debug!("Loaded disk usage");
+                }
+                Err(e) => {
+                    warn!("Failed to load disk usage: {}", e);
+                }
+            }
         }
     }
 

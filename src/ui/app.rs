@@ -11,6 +11,7 @@ use ratatui::Frame;
 use tracing::{debug, info};
 
 use crate::core::{ConfirmAction, ContainerState, Tab, UiAction};
+use crate::docker::format_bytes_size;
 use crate::state::AppState;
 use crate::ui::components::ContainerListWidget;
 
@@ -1221,34 +1222,123 @@ impl UiApp {
         let inner_area = block.inner(area);
         frame.render_widget(block, area);
 
-        let content = match self.state.current_tab {
-            Tab::Images => format!("Total: {}", self.state.images.len()),
-            Tab::Volumes => format!("Total: {}", self.state.volumes.len()),
-            Tab::Networks => format!("Total: {}", self.state.networks.len()),
-            Tab::Compose => "Docker Compose\n\nNot yet implemented".to_string(),
+        match self.state.current_tab {
             Tab::System => {
-                if self.state.docker_connected {
-                    format!(
-                        "Docker Version: {}\nAPI Version: {}\nOS: {}\nArch: {}",
-                        self.state.connection_info.version,
-                        self.state.connection_info.api_version,
-                        self.state.connection_info.os,
-                        self.state.connection_info.arch
-                    )
-                } else {
-                    "Not connected to Docker\n\nPlease check your Docker daemon.".to_string()
-                }
+                self.render_system_tab(frame, inner_area);
             }
-            Tab::Containers => {
-                // This should only happen when containers list is empty
-                "No containers found.\n\nDocker may not be running or you may not have permissions."
-                    .to_string()
+            _ => {
+                let content = match self.state.current_tab {
+                    Tab::Images => format!("Total: {}", self.state.images.len()),
+                    Tab::Volumes => format!("Total: {}", self.state.volumes.len()),
+                    Tab::Networks => format!("Total: {}", self.state.networks.len()),
+                    Tab::Compose => "Docker Compose\n\nNot yet implemented".to_string(),
+                    Tab::System => unreachable!(),
+                    Tab::Containers => {
+                        // This should only happen when containers list is empty
+                        "No containers found.\n\nDocker may not be running or you may not have permissions."
+                            .to_string()
+                    }
+                };
+                let paragraph = Paragraph::new(content).wrap(Wrap { trim: true });
+                frame.render_widget(paragraph, inner_area);
             }
+        }
+    }
+
+    /// Render the System tab with disk usage
+    fn render_system_tab(&self, frame: &mut Frame, area: Rect) {
+        if !self.state.docker_connected {
+            let text = Paragraph::new("Not connected to Docker\n\nPlease check your Docker daemon.")
+                .wrap(Wrap { trim: true });
+            frame.render_widget(text, area);
+            return;
+        }
+
+        // Create layout for system info and disk usage
+        let layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(7),  // System info section
+                Constraint::Length(14), // Disk usage section
+                Constraint::Min(1),     // Actions hint
+            ])
+            .split(area);
+
+        // System info section
+        let info_lines = vec![
+            Line::from(vec![
+                Span::styled("Docker Version:   ", Style::default().fg(Color::Cyan)),
+                Span::raw(&self.state.connection_info.version),
+            ]),
+            Line::from(vec![
+                Span::styled("API Version:      ", Style::default().fg(Color::Cyan)),
+                Span::raw(&self.state.connection_info.api_version),
+            ]),
+            Line::from(vec![
+                Span::styled("OS/Arch:          ", Style::default().fg(Color::Cyan)),
+                Span::raw(format!("{}/{}", self.state.connection_info.os, self.state.connection_info.arch)),
+            ]),
+        ];
+        let info_para = Paragraph::new(info_lines)
+            .block(Block::default().title(" System Information ").borders(Borders::ALL));
+        frame.render_widget(info_para, layout[0]);
+
+        // Disk usage section
+        let disk_usage_lines = if let Some(usage) = &self.state.disk_usage {
+            let total_reclaimable = usage.total_reclaimable();
+            let reclaimable_pct = usage.reclaimable_percentage();
+            
+            vec![
+                Line::from(vec![
+                    Span::styled("Images:           ", Style::default().fg(Color::Cyan)),
+                    Span::raw(format!("{}  (Reclaimable: {})", 
+                        format_bytes_size(usage.images.total),
+                        format_bytes_size(usage.images.reclaimable))),
+                ]),
+                Line::from(vec![
+                    Span::styled("Containers:       ", Style::default().fg(Color::Cyan)),
+                    Span::raw(format!("{}  (Reclaimable: {})", 
+                        format_bytes_size(usage.containers.total),
+                        format_bytes_size(usage.containers.reclaimable))),
+                ]),
+                Line::from(vec![
+                    Span::styled("Local Volumes:    ", Style::default().fg(Color::Cyan)),
+                    Span::raw(format!("{}  (Reclaimable: {})", 
+                        format_bytes_size(usage.volumes.total),
+                        format_bytes_size(usage.volumes.reclaimable))),
+                ]),
+                Line::from(vec![
+                    Span::styled("Build Cache:      ", Style::default().fg(Color::Cyan)),
+                    Span::raw(format!("{}  (Reclaimable: {})", 
+                        format_bytes_size(usage.build_cache.total),
+                        format_bytes_size(usage.build_cache.reclaimable))),
+                ]),
+                Line::from("─".repeat(50)),
+                Line::from(vec![
+                    Span::styled("Total:            ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                    Span::styled(format_bytes_size(usage.total_size()), 
+                        Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                ]),
+                Line::from(vec![
+                    Span::styled("Total Reclaimable:", Style::default().fg(Color::Yellow)),
+                    Span::styled(format!(" {}  [{:.0}% can be freed]", 
+                        format_bytes_size(total_reclaimable),
+                        reclaimable_pct),
+                        Style::default().fg(Color::Yellow)),
+                ]),
+            ]
+        } else {
+            vec![Line::from("Loading disk usage...")]
         };
 
-        let paragraph = Paragraph::new(content).wrap(Wrap { trim: true });
+        let disk_para = Paragraph::new(disk_usage_lines)
+            .block(Block::default().title(" Disk Usage ").borders(Borders::ALL));
+        frame.render_widget(disk_para, layout[1]);
 
-        frame.render_widget(paragraph, inner_area);
+        // Actions hint
+        let hint = Paragraph::new("Actions: [p]Prune unused resources")
+            .style(Style::default().fg(Color::Gray));
+        frame.render_widget(hint, layout[2]);
     }
 
     /// Render the footer

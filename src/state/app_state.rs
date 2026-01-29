@@ -6,6 +6,7 @@ use crate::core::{
     ConfirmAction, ConnectionInfo, ContainerSummary, ImageSummary, NetworkSummary,
     NotificationLevel, Tab, VolumeSummary,
 };
+use crate::docker::SystemDiskUsage;
 
 /// Main application state
 #[derive(Debug, Clone)]
@@ -32,6 +33,9 @@ pub struct AppState {
     // Connection
     pub docker_connected: bool,
     pub connection_info: ConnectionInfo,
+
+    // System disk usage
+    pub disk_usage: Option<SystemDiskUsage>,
 
     // UI state
     pub terminal_size: (u16, u16),
@@ -149,6 +153,7 @@ impl AppState {
             network_list_selected: 0,
             docker_connected: false,
             connection_info: ConnectionInfo::default(),
+            disk_usage: None,
             terminal_size: (80, 24),
             show_help: false,
             notifications: vec![],
@@ -308,6 +313,11 @@ impl AppState {
             self.network_list_selected = 0;
             self.selected_network = None;
         }
+    }
+
+    /// Update disk usage information
+    pub fn update_disk_usage(&mut self, disk_usage: SystemDiskUsage) {
+        self.disk_usage = Some(disk_usage);
     }
 
     /// Navigate to next network in list

@@ -2,22 +2,29 @@
 
 ## Status
 - Total Stories: 5
-- Completed: 0
-- Current Story: US-018-1
+- Completed: 2
+- Current Story: US-018-3
 
 ## Completed Stories
-None yet - starting fresh
+
+### US-018-1: Add system disk usage data structures and Docker API methods ✅
+- Created SystemDiskUsage, ResourceUsage, SystemInfo, PruneResult structs
+- Added get_disk_usage(), get_system_info(), prune_containers_detailed() methods
+- Added format_bytes_size() for human-readable formatting
+
+### US-018-2: Render system tab with disk usage display ✅
+- Added disk_usage field to AppState
+- Created render_system_tab() method with proper layout
+- Shows Docker version, API version, OS/Arch
+- Shows disk usage for images, containers, volumes, build cache
+- Shows total and reclaimable space with percentage
+- Added [p]Prune hint at bottom
+- Auto-fetches disk usage during refresh_data()
 
 ## In Progress
-None - ready to start
+None - ready for next story
 
 ## Remaining Stories
-
-### US-018-1: Add system disk usage data structures and Docker API methods
-Status: NOT STARTED
-
-### US-018-2: Render system tab with disk usage display
-Status: NOT STARTED
 
 ### US-018-3: Add prune dialog with checkboxes
 Status: NOT STARTED
