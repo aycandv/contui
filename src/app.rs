@@ -755,10 +755,14 @@ impl App {
 
                 // Prune volumes
                 if options.volumes {
+                    info!("Pruning volumes...");
                     match client.prune_volumes().await {
                         Ok(reclaimed) => {
                             total_reclaimed += reclaimed as i64;
                             info!("Pruned volumes, reclaimed {} bytes", reclaimed);
+                            if reclaimed == 0 {
+                                info!("No unused volumes found to prune");
+                            }
                         }
                         Err(e) => {
                             error!("Failed to prune volumes: {}", e);
@@ -780,10 +784,7 @@ impl App {
                     }
                 }
 
-                // Build cache pruning is not available in bollard 0.18
-                if options.build_cache {
-                    info!("Build cache pruning not available in this version");
-                }
+                // Note: Build cache pruning removed - not available in bollard 0.18
 
                 // Show notification
                 let size_str = crate::docker::format_bytes_size(total_reclaimed);

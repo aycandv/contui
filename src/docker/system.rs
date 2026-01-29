@@ -222,8 +222,9 @@ fn parse_disk_usage(response: SystemDataUsageResponse) -> SystemDiskUsage {
             let size = cache.size.unwrap_or(0);
             usage.build_cache.total += size;
             usage.build_cache.count += 1;
-            // All build cache is reclaimable
-            usage.build_cache.reclaimable += size;
+            // Build cache is reclaimable, but bollard 0.18 doesn't support pruning it
+            // Mark as 0 reclaimable since we can't prune it via API
+            usage.build_cache.reclaimable += 0;
         }
     }
 

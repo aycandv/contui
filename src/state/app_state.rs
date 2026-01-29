@@ -751,7 +751,7 @@ impl AppState {
     /// Navigate down in prune dialog
     pub fn prune_dialog_next(&mut self) {
         if let Some(dialog) = &mut self.prune_dialog {
-            if dialog.selected_index < 5 {
+            if dialog.selected_index < 4 {
                 dialog.selected_index += 1;
             }
         }
@@ -765,15 +765,13 @@ impl AppState {
                 1 => dialog.images = !dialog.images,
                 2 => dialog.volumes = !dialog.volumes,
                 3 => dialog.networks = !dialog.networks,
-                4 => dialog.build_cache = !dialog.build_cache,
-                5 => {
+                4 => {
                     // Toggle everything
-                    let all = !(dialog.containers && dialog.images && dialog.volumes && dialog.networks && dialog.build_cache);
+                    let all = !(dialog.containers && dialog.images && dialog.volumes && dialog.networks);
                     dialog.containers = all;
                     dialog.images = all;
                     dialog.volumes = all;
                     dialog.networks = all;
-                    dialog.build_cache = all;
                 }
                 _ => {}
             }

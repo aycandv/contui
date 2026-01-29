@@ -506,7 +506,7 @@ impl UiApp {
             KeyCode::Enter => {
                 // Check if any option is selected
                 let has_selection = self.state.prune_dialog.as_ref().map_or(false, |d| {
-                    d.containers || d.images || d.volumes || d.networks || d.build_cache
+                    d.containers || d.images || d.volumes || d.networks
                 });
                 
                 if has_selection {
@@ -1004,7 +1004,7 @@ impl UiApp {
             .constraints([
                 Constraint::Length(1),  // Title
                 Constraint::Length(1),  // Spacer
-                Constraint::Length(6),  // Options
+                Constraint::Length(5),  // Options (5 items)
                 Constraint::Length(1),  // Spacer
                 Constraint::Length(1),  // Buttons hint
             ])
@@ -1027,13 +1027,13 @@ impl UiApp {
         frame.render_widget(title, layout[0]);
 
         // Options
+        let all_selected = dialog.containers && dialog.images && dialog.volumes && dialog.networks;
         let options = vec![
             (0, dialog.containers, "Containers (stopped)"),
             (1, dialog.images, "Images (dangling)"),
             (2, dialog.volumes, "Volumes (unused)"),
             (3, dialog.networks, "Networks (unused)"),
-            (4, dialog.build_cache, "Build Cache"),
-            (5, dialog.containers && dialog.images && dialog.volumes && dialog.networks && dialog.build_cache, "Everything (select all)"),
+            (4, all_selected, "Everything (select all)"),
         ];
 
         let options_lines: Vec<Line> = options
