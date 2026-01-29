@@ -1,43 +1,50 @@
-# Ralph Progress: US-018 System Disk Usage and Prune
+# Ralph Progress: US-019 CLI Self-Management
 
 ## Status
 - Total Stories: 5
 - Completed: 5
-- Current Story: None - All complete!
+- Current Story: All complete!
 
 ## Completed Stories
 
-### US-018-1: Add system disk usage data structures and Docker API methods ✅
-- Created SystemDiskUsage, ResourceUsage, SystemInfo, PruneResult structs
-- Added get_disk_usage(), get_system_info(), prune_containers_detailed() methods
-- Added format_bytes_size() for human-readable formatting
+### US-019-1: Add self-update functionality ✅
+- Added 'update' subcommand using clap and self_update crate
+- Checks GitHub releases API for latest version
+- Compares current version with latest using semver
+- Downloads appropriate binary for current platform
+- Replaces current binary atomically
+- Shows progress during download
+- Shows success/failure messages
 
-### US-018-2: Render system tab with disk usage display ✅
-- Added disk_usage field to AppState with update method
-- Created render_system_tab() with proper layout
-- Shows Docker version, API version, OS/Arch
-- Shows disk usage for images, containers, volumes, build cache
-- Shows total and reclaimable space with percentage
-- Added [p]Prune hint at bottom
-- Auto-fetches disk usage during refresh_data()
+### US-019-2: Add update --check flag ✅
+- Added '--check' flag to update command
+- Shows current version and latest version
+- Shows 'Update available' or 'Up to date' message
 
-### US-018-3: Add prune dialog with checkboxes ✅
-- Added PruneDialogState with containers, images, volumes, networks, build_cache options
-- Added navigation methods (prev, next, toggle)
-- Created render_prune_dialog() with checkbox UI
-- Added 'p' key handler on System tab to open dialog
-- Added handle_prune_dialog_key() for dialog key handling
+### US-019-3: Add self-uninstall functionality ✅
+- Added 'uninstall' subcommand
+- Shows confirmation prompt before removing
+- Removes the binary from current_exe() path
+- Shows success message with instructions for config cleanup
 
-### US-018-4: Implement prune operations ✅
-- Added PruneSystem to UiAction
-- Implemented prune_system() method in App
-- Executes selected prune operations sequentially
-- Shows notification with total reclaimed space
-- Refreshes data after prune completes
+### US-019-4: Add uninstall --purge flag ✅
+- Added '--purge' flag to uninstall command
+- Removes configuration directory (~/.config/contui)
+- Shows what files were removed
 
-### US-018-5: Update help text with new keybindings ✅
-- Added "System Tab" section to help overlay
-- Documented 'p' key for prune dialog
+### US-019-5: Enhance version command ✅
+- Added 'version' subcommand (in addition to --version)
+- Shows current version, platform, and repository URL
+- Updated help text with new commands
 
 ## Summary
-All user stories for US-018 completed successfully!
+All user stories for US-019 completed successfully!
+
+## New Commands
+```bash
+contui update          # Self-update to latest version
+contui update --check  # Check for updates
+contui uninstall       # Uninstall contui
+contui uninstall --purge  # Uninstall + remove config
+contui version         # Show detailed version info
+```

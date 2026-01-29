@@ -1,18 +1,20 @@
 {
   "project": "Contui",
-  "branchName": "ralph/US-018-system-disk-usage",
-  "description": "System Disk Usage and Prune - View disk usage breakdown and clean up unused Docker resources",
+  "branchName": "ralph/US-019-cli-self-management",
+  "description": "CLI Self-Management - Add update and uninstall commands to Contui",
   "userStories": [
     {
-      "id": "US-018-1",
-      "title": "Add system disk usage data structures and Docker API methods",
-      "description": "As a developer, I need data structures and API methods to fetch and represent disk usage data from Docker.",
+      "id": "US-019-1",
+      "title": "Add self-update functionality",
+      "description": "As a user, I want to update Contui to the latest version directly from the CLI.",
       "acceptanceCriteria": [
-        "Create SystemDiskUsage struct with fields for images, containers, volumes, build cache",
-        "Each category has total size and reclaimable size",
-        "Add df() method to Docker client that calls bollard's system df API",
-        "Parse SystemDataUsageResponse from bollard into our SystemDiskUsage struct",
-        "Add human-readable formatting for sizes (MB, GB, TB)",
+        "Add 'update' subcommand using clap",
+        "Check GitHub releases API for latest version",
+        "Compare current version with latest using semver",
+        "Download appropriate binary for current platform",
+        "Replace current binary atomically",
+        "Show progress during download",
+        "Show success/failure messages",
         "Typecheck passes"
       ],
       "priority": 1,
@@ -20,20 +22,14 @@
       "notes": ""
     },
     {
-      "id": "US-018-2",
-      "title": "Render system tab with disk usage display",
-      "description": "As a user, I want to see disk usage breakdown in the System tab so I can understand what's using space.",
+      "id": "US-019-2",
+      "title": "Add update --check flag",
+      "description": "As a user, I want to check if an update is available without installing it.",
       "acceptanceCriteria": [
-        "Update System tab rendering to show disk usage section",
-        "Display Docker version, API version, OS/Arch, Kernel version",
-        "Display Images: total size and reclaimable size",
-        "Display Containers: total size and reclaimable size",
-        "Display Local Volumes: total size and reclaimable size",
-        "Display Build Cache: total size and reclaimable size",
-        "Show grand total and total reclaimable",
-        "Show reclaimable percentage",
-        "Show '[p]Prune unused resources' hint at bottom",
-        "Fetch disk usage data when tab is selected",
+        "Add '--check' flag to update command",
+        "Show current version and latest version",
+        "Show 'Update available' or 'Up to date' message",
+        "Exit with appropriate code (0=up to date, 1=update available)",
         "Typecheck passes"
       ],
       "priority": 2,
@@ -41,17 +37,14 @@
       "notes": ""
     },
     {
-      "id": "US-018-3",
-      "title": "Add prune dialog with checkboxes",
-      "description": "As a user, I want a dialog to select which resources to prune before cleaning up.",
+      "id": "US-019-3",
+      "title": "Add self-uninstall functionality",
+      "description": "As a user, I want to uninstall Contui directly from the CLI.",
       "acceptanceCriteria": [
-        "Press 'p' on System tab to open prune dialog",
-        "Dialog shows centered popup with checkboxes",
-        "Options: Containers (stopped), Images (dangling), Volumes (unused), Networks (unused), Build Cache",
-        "'Everything' checkbox that selects/deselects all",
-        "Navigate options with ↑/↓ arrow keys",
-        "Toggle checkbox with Space or Enter",
-        "Confirm with Enter, cancel with Esc or 'q'",
+        "Add 'uninstall' subcommand",
+        "Show confirmation prompt before removing",
+        "Remove the binary from current_exe() path",
+        "Show success message with instructions for config cleanup",
         "Typecheck passes"
       ],
       "priority": 3,
@@ -59,17 +52,13 @@
       "notes": ""
     },
     {
-      "id": "US-018-4",
-      "title": "Implement prune operations",
-      "description": "As a user, I want to actually prune the selected resources and see how much space was reclaimed.",
+      "id": "US-019-4",
+      "title": "Add uninstall --purge flag",
+      "description": "As a user, I want to remove Contui and all its configuration files.",
       "acceptanceCriteria": [
-        "Add prune methods to Docker client: prune_containers, prune_images, prune_volumes, prune_networks, prune_build_cache",
-        "When prune dialog is confirmed, execute selected prune operations",
-        "Show confirmation dialog before executing prune",
-        "Show progress/notification during prune",
-        "Calculate total reclaimed space from all prune results",
-        "Show success notification: 'Reclaimed 2.3 GB'",
-        "Refresh disk usage display after prune completes",
+        "Add '--purge' flag to uninstall command",
+        "Remove configuration directory (~/.config/contui)",
+        "Show what files were removed",
         "Typecheck passes"
       ],
       "priority": 4,
@@ -77,13 +66,14 @@
       "notes": ""
     },
     {
-      "id": "US-018-5",
-      "title": "Update help text with new keybindings",
-      "description": "As a user, I need to know about the new System tab keybindings.",
+      "id": "US-019-5",
+      "title": "Enhance version command",
+      "description": "As a user, I want to see detailed version information.",
       "acceptanceCriteria": [
-        "Add 'System Tab' section to help overlay",
-        "Document 'p' key for prune dialog",
-        "Update System tab placeholder text to show actual functionality",
+        "Add 'version' subcommand (in addition to --version)",
+        "Show current version",
+        "Show target platform",
+        "Update help text with new commands",
         "Typecheck passes"
       ],
       "priority": 5,

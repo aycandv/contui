@@ -1,5 +1,5 @@
 use anyhow::Result;
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use tracing::{info, warn};
 
 use contui::app::App;
@@ -13,27 +13,237 @@ use contui::docker::DockerClient;
 #[command(about = "A terminal UI for Docker management")]
 #[command(version)]
 struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
+
     /// Path to configuration file
-    #[arg(short, long, value_name = "FILE")]
+    #[arg(short, long, value_name = "FILE", global = true)]
     config: Option<std::path::PathBuf>,
 
     /// Docker host to connect to
-    #[arg(short = 'H', long, value_name = "HOST")]
+    #[arg(short = 'H', long, value_name = "HOST", global = true)]
     host: Option<String>,
 
     /// Enable debug logging to file
-    #[arg(short, long)]
+    #[arg(short, long, global = true)]
     debug: bool,
 
     /// Log level (error, warn, info, debug, trace)
-    #[arg(long, value_name = "LEVEL", default_value = "info")]
+    #[arg(long, value_name = "LEVEL", default_value = "info", global = true)]
     log_level: String,
+}
+
+#[derive(Subcommand, Debug)]
+enum Commands {
+    /// Start the TUI (default)
+    #[command(alias = "tui")]
+    Run,
+
+    /// Update contui to the latest version
+    Update {
+        /// Only check for updates, don't install
+        #[arg(long)]
+        check: bool,
+    },
+
+    /// Uninstall contui from your system
+    Uninstall {
+        /// Also remove all configuration files
+        #[arg(long)]
+        purge: bool,
+    },
+
+    /// Show version information
+    Version,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    match cli.command {
+        Some(Commands::Update { check }) => {
+            if check {
+                return check_for_updates().await;
+            } else {
+                return update_self().await;
+            }
+        }
+        Some(Commands::Uninstall { purge }) => {
+            return uninstall_self(purge).await;
+        }
+        Some(Commands::Version) => {
+            print_version();
+            return Ok(());
+        }
+        _ => run_tui(cli).await,
+    }
+}
+
+fn print_version() {
+    println!("contui {}", env!("CARGO_PKG_VERSION"));
+    println!("Platform: {} {}", std::env::consts::OS, std::env::consts::ARCH);
+    println!("Repository: https://github.com/aycandv/contui");
+}
+
+async fn check_for_updates() -> Result<()> {
+    println!("Checking for updates...");
+
+    let current_version = env!("CARGO_PKG_VERSION");
+    
+    match get_latest_version().await {
+        Ok(latest_version) => {
+            if latest_version == current_version {
+                println!("✓ You're on the latest version (v{})", current_version);
+            } else {
+                println!("Current version: v{}", current_version);
+                println!("Latest version: v{}", latest_version);
+                println!("\nUpdate available! Run 'contui update' to install.");
+            }
+        }
+        Err(e) => {
+            eprintln!("✗ Failed to check for updates: {}", e);
+            std::process::exit(1);
+        }
+    }
+    
+    Ok(())
+}
+
+async fn update_self() -> Result<()> {
+    use self_update::cargo_crate_version;
+    use self_update::backends::github::Update;
+
+    println!("Checking for updates...");
+
+    let current_version = cargo_crate_version!();
+
+    let status = Update::configure()
+        .repo_owner("aycandv")
+        .repo_name("contui")
+        .bin_name("contui")
+        .show_download_progress(true)
+        .show_output(false)
+        .no_confirm(false)
+        .current_version(current_version)
+        .build()?
+        .update()?;
+
+    if status.updated() {
+        println!("\n✓ Successfully updated to v{}", status.version());
+        println!("  Previous version: v{}", current_version);
+    } else {
+        println!("\n✓ You're already on the latest version (v{})", current_version);
+    }
+
+    Ok(())
+}
+
+async fn uninstall_self(purge: bool) -> Result<()> {
+    let exe_path = std::env::current_exe()?;
+    
+    println!("This will remove contui from your system.");
+    println!("Binary location: {}", exe_path.display());
+    
+    if purge {
+        let config_dir = directories::ProjectDirs::from("com", "contui", "contui")
+            .map(|d| d.config_dir().to_path_buf())
+            .or_else(|| {
+                std::env::var_os("HOME")
+                    .map(|h| std::path::PathBuf::from(h).join(".config/contui"))
+            });
+        
+        if let Some(ref dir) = config_dir {
+            println!("Configuration directory: {}", dir.display());
+        }
+    }
+    
+    println!();
+    print!("Are you sure? [y/N] ");
+    use std::io::Write;
+    std::io::stdout().flush()?;
+    
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input)?;
+    
+    if !input.trim().eq_ignore_ascii_case("y") {
+        println!("Uninstall cancelled.");
+        return Ok(());
+    }
+
+    // Remove binary
+    println!("\nRemoving {}...", exe_path.display());
+    if let Err(e) = std::fs::remove_file(&exe_path) {
+        eprintln!("✗ Failed to remove binary: {}", e);
+        
+        // On Unix, if the binary is running, we might need to use a different approach
+        #[cfg(unix)]
+        {
+            eprintln!("  The binary may be in use. Try running:");
+            eprintln!("  rm '{}'", exe_path.display());
+        }
+        
+        return Err(e.into());
+    }
+
+    // Remove config if purge
+    if purge {
+        if let Some(config_dir) = directories::ProjectDirs::from("com", "contui", "contui")
+            .map(|d| d.config_dir().to_path_buf())
+            .or_else(|| {
+                std::env::var_os("HOME")
+                    .map(|h| std::path::PathBuf::from(h).join(".config/contui"))
+            }) {
+            if config_dir.exists() {
+                println!("Removing {}...", config_dir.display());
+                if let Err(e) = std::fs::remove_dir_all(&config_dir) {
+                    eprintln!("✗ Failed to remove config directory: {}", e);
+                    eprintln!("  You can remove it manually:");
+                    eprintln!("  rm -rf '{}'", config_dir.display());
+                }
+            }
+        }
+    }
+
+    println!("\n✓ Successfully uninstalled contui.");
+    
+    if !purge {
+        if let Some(config_dir) = directories::ProjectDirs::from("com", "contui", "contui")
+            .map(|d| d.config_dir().to_path_buf())
+            .or_else(|| {
+                std::env::var_os("HOME")
+                    .map(|h| std::path::PathBuf::from(h).join(".config/contui"))
+            }) {
+            println!("\nTo also remove configuration files:");
+            println!("  rm -rf '{}'", config_dir.display());
+        }
+    }
+
+    Ok(())
+}
+
+async fn get_latest_version() -> Result<String> {
+    let client = reqwest::Client::new();
+    let response = client
+        .get("https://api.github.com/repos/aycandv/contui/releases/latest")
+        .header("User-Agent", "contui-update-checker")
+        .send()
+        .await?;
+
+    if !response.status().is_success() {
+        return Err(anyhow::anyhow!("GitHub API returned {}", response.status()));
+    }
+
+    let release: serde_json::Value = response.json().await?;
+    let tag = release["tag_name"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("Could not parse version from GitHub response"))?;
+    
+    // Remove 'v' prefix if present
+    Ok(tag.trim_start_matches('v').to_string())
+}
+
+async fn run_tui(cli: Cli) -> Result<()> {
     // Initialize logging (file only, not stdout to avoid polluting TUI)
     let log_level = if cli.debug { "debug" } else { &cli.log_level };
 
