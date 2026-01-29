@@ -171,9 +171,11 @@ fn parse_disk_usage(response: SystemDataUsageResponse) -> SystemDiskUsage {
         for image in images {
             usage.images.total += image.size;
             usage.images.count += 1;
-            // Images that are not used by any container are reclaimable
+            // Dangling images (untagged and not used by any container) are reclaimable
             // Note: containers field can be -1 if not calculated
-            if image.containers >= 0 && image.containers == 0 {
+            let is_unused = image.containers >= 0 && image.containers == 0;
+            let is_dangling = image.repo_tags.is_empty();
+            if is_unused && is_dangling {
                 usage.images.reclaimable += image.size;
             }
         }
