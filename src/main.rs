@@ -122,10 +122,16 @@ async fn update_self() -> Result<()> {
 
     let current_version = cargo_crate_version!();
 
+    // Determine target identifier matching our release asset naming
+    let target = self_update::get_target();
+    println!("Platform: {}", target);
+
     let status = Update::configure()
         .repo_owner("aycandv")
         .repo_name("contui")
         .bin_name("contui")
+        .target(&target)
+        .identifier("contui")
         .show_download_progress(true)
         .show_output(false)
         .no_confirm(false)
