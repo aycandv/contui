@@ -20,9 +20,17 @@ impl ContainerDetailPanel {
         Paragraph::new(text)
             .block(
                 Block::default()
-                    .title(format!(" {} ", container.names.first().cloned().unwrap_or_else(|| "Container".to_string())))
+                    .title(format!(
+                        " {} ",
+                        container
+                            .names
+                            .first()
+                            .cloned()
+                            .unwrap_or_else(|| "Container".to_string())
+                    ))
                     .borders(Borders::ALL)
-                    .border_style(Color::DarkGray),
+                    .border_style(Color::DarkGray)
+                    .style(Style::default().bg(Color::Black)),
             )
             .wrap(Wrap { trim: true })
     }
@@ -124,7 +132,10 @@ impl ContainerDetailPanel {
     /// Create an info line with label and value (owned strings)
     fn info_line_owned(label: &str, value: String) -> Line<'static> {
         Line::from(vec![
-            Span::styled(label.to_string(), Style::default().add_modifier(Modifier::BOLD)),
+            Span::styled(
+                label.to_string(),
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
             Span::raw(" "),
             Span::raw(value),
         ])
@@ -134,7 +145,10 @@ impl ContainerDetailPanel {
     fn format_port(port: &PortMapping) -> Line<'static> {
         let ip = port.ip.clone().unwrap_or_else(|| "0.0.0.0".to_string());
         let text = if let Some(public) = port.public_port {
-            format!("{}:{} → {}:{}", ip, public, port.private_port, port.protocol)
+            format!(
+                "{}:{} → {}:{}",
+                ip, public, port.private_port, port.protocol
+            )
         } else {
             format!("{}:{}", port.private_port, port.protocol)
         };
@@ -190,14 +204,12 @@ mod tests {
             image_id: "sha256:123".to_string(),
             command: "nginx -g daemon off;".to_string(),
             created: chrono::Utc::now(),
-            ports: vec![
-                PortMapping {
-                    ip: Some("0.0.0.0".to_string()),
-                    private_port: 80,
-                    public_port: Some(8080),
-                    protocol: "tcp".to_string(),
-                },
-            ],
+            ports: vec![PortMapping {
+                ip: Some("0.0.0.0".to_string()),
+                private_port: 80,
+                public_port: Some(8080),
+                protocol: "tcp".to_string(),
+            }],
             size_rw: Some(1024),
             size_root_fs: Some(1024000),
             labels: std::collections::HashMap::new(),
@@ -217,7 +229,7 @@ mod tests {
         let lines = ContainerDetailPanel::format_container_info(&container);
 
         assert!(!lines.is_empty());
-        
+
         // Check that status line exists
         let status_line = lines.iter().find(|l| l.to_string().contains("Status:"));
         assert!(status_line.is_some());

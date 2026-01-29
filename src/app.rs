@@ -27,6 +27,10 @@ pub struct App {
     log_fetch_rx: Option<mpsc::Receiver<DockMonResult<Vec<LogEntry>>>>,
     /// Last time we auto-fetched logs (for follow mode)
     last_log_fetch: Option<std::time::Instant>,
+    /// Channel receiver for stats fetch results
+    stats_fetch_rx: Option<mpsc::Receiver<DockMonResult<crate::docker::StatsEntry>>>,
+    /// Last time we auto-fetched stats (for follow mode)
+    last_stats_fetch: Option<std::time::Instant>,
 }
 
 impl App {
@@ -55,6 +59,8 @@ impl App {
             docker_client,
             log_fetch_rx: None,
             last_log_fetch: None,
+            stats_fetch_rx: None,
+            last_stats_fetch: None,
         })
     }
 
@@ -134,11 +140,15 @@ impl App {
             if last_tick.elapsed() >= tick_rate {
                 // Check for completed log fetches
                 self.check_log_fetch().await;
-                
+
+                // Check for completed stats fetches
+                self.check_stats_fetch().await;
+
                 // Auto-refresh logs when in follow mode (every 2 seconds)
                 if let Some(ref log_view) = self.state.log_view {
                     if log_view.follow && self.log_fetch_rx.is_none() {
-                        let should_fetch = self.last_log_fetch
+                        let should_fetch = self
+                            .last_log_fetch
                             .map(|t| t.elapsed() >= Duration::from_secs(2))
                             .unwrap_or(true);
                         if should_fetch {
@@ -148,7 +158,45 @@ impl App {
                         }
                     }
                 }
-                
+
+                // Auto-refresh stats when in follow mode (every 1 second)
+                // Also switch to follow the selected container if it changed
+                let stats_container_id = self
+                    .state
+                    .stats_view
+                    .as_ref()
+                    .map(|sv| sv.container_id.clone());
+                let selected_id = self.state.selected_container.clone();
+
+                if let (Some(stats_id), Some(selected_id)) = (stats_container_id, selected_id) {
+                    if stats_id != selected_id {
+                        // Selected container changed - switch stats to new container
+                        let name = self
+                            .state
+                            .containers
+                            .iter()
+                            .find(|c| c.id == selected_id)
+                            .and_then(|c| c.names.first())
+                            .cloned()
+                            .unwrap_or_else(|| selected_id.chars().take(12).collect::<String>());
+                        self.state.open_stats_view(selected_id.clone(), name);
+                        self.start_stats_streaming(selected_id);
+                        self.last_stats_fetch = Some(std::time::Instant::now());
+                    } else if let Some(ref stats_view) = self.state.stats_view {
+                        // Same container - just refresh if needed
+                        if stats_view.follow && self.stats_fetch_rx.is_none() {
+                            let should_fetch = self
+                                .last_stats_fetch
+                                .map(|t| t.elapsed() >= Duration::from_secs(1))
+                                .unwrap_or(true);
+                            if should_fetch {
+                                self.start_stats_streaming(stats_id);
+                                self.last_stats_fetch = Some(std::time::Instant::now());
+                            }
+                        }
+                    }
+                }
+
                 // Refresh data periodically (every 2 seconds)
                 if last_data_refresh.elapsed() >= data_refresh_rate {
                     self.refresh_data().await;
@@ -216,9 +264,53 @@ impl App {
                     lv.follow = true;
                 }
 
-                self.state.add_notification("Loading logs...", NotificationLevel::Info);
+                self.state
+                    .add_notification("Loading logs...", NotificationLevel::Info);
                 self.start_log_streaming(id);
                 self.last_log_fetch = Some(std::time::Instant::now());
+            }
+            UiAction::ShowContainerStats(id) => {
+                // Toggle stats panel: close if already showing this container, otherwise open
+                let should_close = self
+                    .state
+                    .stats_view
+                    .as_ref()
+                    .map(|sv| sv.container_id == id)
+                    .unwrap_or(false);
+
+                if should_close {
+                    self.state.close_stats_view();
+                } else {
+                    let name = self
+                        .state
+                        .containers
+                        .iter()
+                        .find(|c| c.id == id)
+                        .and_then(|c| c.names.first())
+                        .cloned()
+                        .unwrap_or_else(|| id.chars().take(12).collect::<String>());
+
+                    self.state.open_stats_view(id.clone(), name);
+                    self.state
+                        .add_notification("Loading stats...", NotificationLevel::Info);
+                    self.start_stats_streaming(id);
+                    self.last_stats_fetch = Some(std::time::Instant::now());
+                }
+            }
+            UiAction::ShowContainerDetails(id) => {
+                let name = self
+                    .state
+                    .containers
+                    .iter()
+                    .find(|c| c.id == id)
+                    .and_then(|c| c.names.first())
+                    .cloned()
+                    .unwrap_or_else(|| id.chars().take(12).collect::<String>());
+
+                self.state.open_detail_view(id.clone(), name);
+                self.state
+                    .add_notification("Loading details...", NotificationLevel::Info);
+                self.fetch_container_details(id).await;
             }
             UiAction::RemoveImage(id) => {
                 self.remove_image(&id).await;
@@ -226,10 +318,20 @@ impl App {
             UiAction::PruneImages => {
                 self.prune_images().await;
             }
-            UiAction::InspectImage(_id) => {
-                // TODO: Implement image inspect view in future story
-                info!("Image inspect not yet implemented");
-                self.state.add_notification("Image inspect not yet implemented", NotificationLevel::Warning);
+            UiAction::ShowImageDetails(id) => {
+                let name = self
+                    .state
+                    .images
+                    .iter()
+                    .find(|i| i.id == id)
+                    .and_then(|i| i.repo_tags.first())
+                    .cloned()
+                    .unwrap_or_else(|| id.chars().take(12).collect::<String>());
+
+                self.state.open_image_detail_view(id.clone(), name);
+                self.state
+                    .add_notification("Loading image details...", NotificationLevel::Info);
+                self.fetch_image_details(id).await;
             }
             UiAction::RemoveVolume(name) => {
                 self.remove_volume(&name).await;
@@ -243,6 +345,12 @@ impl App {
             UiAction::PruneNetworks => {
                 self.prune_networks().await;
             }
+            UiAction::ExportLogs => {
+                self.export_logs();
+            }
+            UiAction::Clear => {
+                // No-op: terminal clear is handled by the render cycle
+            }
         }
     }
 
@@ -253,12 +361,16 @@ impl App {
             match client.start_container(id).await {
                 Ok(_) => {
                     info!("Container {} started", id);
-                    self.state.add_notification("Container started", NotificationLevel::Success);
+                    self.state
+                        .add_notification("Container started", NotificationLevel::Success);
                     self.refresh_data().await;
                 }
                 Err(e) => {
                     error!("Failed to start container {}: {}", id, e);
-                    self.state.add_notification(format!("Failed to start: {}", e), NotificationLevel::Error);
+                    self.state.add_notification(
+                        format!("Failed to start: {}", e),
+                        NotificationLevel::Error,
+                    );
                 }
             }
         }
@@ -271,12 +383,16 @@ impl App {
             match client.stop_container(id, Some(10)).await {
                 Ok(_) => {
                     info!("Container {} stopped", id);
-                    self.state.add_notification("Container stopped", NotificationLevel::Success);
+                    self.state
+                        .add_notification("Container stopped", NotificationLevel::Success);
                     self.refresh_data().await;
                 }
                 Err(e) => {
                     error!("Failed to stop container {}: {}", id, e);
-                    self.state.add_notification(format!("Failed to stop: {}", e), NotificationLevel::Error);
+                    self.state.add_notification(
+                        format!("Failed to stop: {}", e),
+                        NotificationLevel::Error,
+                    );
                 }
             }
         }
@@ -289,12 +405,16 @@ impl App {
             match client.restart_container(id, Some(10)).await {
                 Ok(_) => {
                     info!("Container {} restarted", id);
-                    self.state.add_notification("Container restarted", NotificationLevel::Success);
+                    self.state
+                        .add_notification("Container restarted", NotificationLevel::Success);
                     self.refresh_data().await;
                 }
                 Err(e) => {
                     error!("Failed to restart container {}: {}", id, e);
-                    self.state.add_notification(format!("Failed to restart: {}", e), NotificationLevel::Error);
+                    self.state.add_notification(
+                        format!("Failed to restart: {}", e),
+                        NotificationLevel::Error,
+                    );
                 }
             }
         }
@@ -307,12 +427,16 @@ impl App {
             match client.pause_container(id).await {
                 Ok(_) => {
                     info!("Container {} paused", id);
-                    self.state.add_notification("Container paused", NotificationLevel::Success);
+                    self.state
+                        .add_notification("Container paused", NotificationLevel::Success);
                     self.refresh_data().await;
                 }
                 Err(e) => {
                     error!("Failed to pause container {}: {}", id, e);
-                    self.state.add_notification(format!("Failed to pause: {}", e), NotificationLevel::Error);
+                    self.state.add_notification(
+                        format!("Failed to pause: {}", e),
+                        NotificationLevel::Error,
+                    );
                 }
             }
         }
@@ -325,12 +449,16 @@ impl App {
             match client.unpause_container(id).await {
                 Ok(_) => {
                     info!("Container {} unpaused", id);
-                    self.state.add_notification("Container unpaused", NotificationLevel::Success);
+                    self.state
+                        .add_notification("Container unpaused", NotificationLevel::Success);
                     self.refresh_data().await;
                 }
                 Err(e) => {
                     error!("Failed to unpause container {}: {}", id, e);
-                    self.state.add_notification(format!("Failed to unpause: {}", e), NotificationLevel::Error);
+                    self.state.add_notification(
+                        format!("Failed to unpause: {}", e),
+                        NotificationLevel::Error,
+                    );
                 }
             }
         }
@@ -343,12 +471,16 @@ impl App {
             match client.kill_container(id, None).await {
                 Ok(_) => {
                     info!("Container {} killed", id);
-                    self.state.add_notification("Container killed", NotificationLevel::Success);
+                    self.state
+                        .add_notification("Container killed", NotificationLevel::Success);
                     self.refresh_data().await;
                 }
                 Err(e) => {
                     error!("Failed to kill container {}: {}", id, e);
-                    self.state.add_notification(format!("Failed to kill: {}", e), NotificationLevel::Error);
+                    self.state.add_notification(
+                        format!("Failed to kill: {}", e),
+                        NotificationLevel::Error,
+                    );
                 }
             }
         }
@@ -361,12 +493,16 @@ impl App {
             match client.remove_container(id, false, false).await {
                 Ok(_) => {
                     info!("Container {} removed", id);
-                    self.state.add_notification("Container removed", NotificationLevel::Success);
+                    self.state
+                        .add_notification("Container removed", NotificationLevel::Success);
                     self.refresh_data().await;
                 }
                 Err(e) => {
                     error!("Failed to remove container {}: {}", id, e);
-                    self.state.add_notification(format!("Failed to remove: {}", e), NotificationLevel::Error);
+                    self.state.add_notification(
+                        format!("Failed to remove: {}", e),
+                        NotificationLevel::Error,
+                    );
                 }
             }
         }
@@ -430,12 +566,16 @@ impl App {
             match client.remove_image(id, false).await {
                 Ok(_) => {
                     info!("Image {} removed", id);
-                    self.state.add_notification("Image removed", NotificationLevel::Success);
+                    self.state
+                        .add_notification("Image removed", NotificationLevel::Success);
                     self.refresh_data().await;
                 }
                 Err(e) => {
                     error!("Failed to remove image {}: {}", id, e);
-                    self.state.add_notification(format!("Failed to remove image: {}", e), NotificationLevel::Error);
+                    self.state.add_notification(
+                        format!("Failed to remove image: {}", e),
+                        NotificationLevel::Error,
+                    );
                 }
             }
         }
@@ -449,12 +589,18 @@ impl App {
                 Ok(reclaimed) => {
                     let size_str = format_size(reclaimed);
                     info!("Pruned images, reclaimed {}", size_str);
-                    self.state.add_notification(format!("Pruned images, reclaimed {}", size_str), NotificationLevel::Success);
+                    self.state.add_notification(
+                        format!("Pruned images, reclaimed {}", size_str),
+                        NotificationLevel::Success,
+                    );
                     self.refresh_data().await;
                 }
                 Err(e) => {
                     error!("Failed to prune images: {}", e);
-                    self.state.add_notification(format!("Failed to prune images: {}", e), NotificationLevel::Error);
+                    self.state.add_notification(
+                        format!("Failed to prune images: {}", e),
+                        NotificationLevel::Error,
+                    );
                 }
             }
         }
@@ -467,12 +613,16 @@ impl App {
             match client.remove_volume(name, false).await {
                 Ok(_) => {
                     info!("Volume {} removed", name);
-                    self.state.add_notification("Volume removed", NotificationLevel::Success);
+                    self.state
+                        .add_notification("Volume removed", NotificationLevel::Success);
                     self.refresh_data().await;
                 }
                 Err(e) => {
                     error!("Failed to remove volume {}: {}", name, e);
-                    self.state.add_notification(format!("Failed to remove volume: {}", e), NotificationLevel::Error);
+                    self.state.add_notification(
+                        format!("Failed to remove volume: {}", e),
+                        NotificationLevel::Error,
+                    );
                 }
             }
         }
@@ -486,12 +636,18 @@ impl App {
                 Ok(reclaimed) => {
                     let size_str = format_size(reclaimed);
                     info!("Pruned volumes, reclaimed {}", size_str);
-                    self.state.add_notification(format!("Pruned volumes, reclaimed {}", size_str), NotificationLevel::Success);
+                    self.state.add_notification(
+                        format!("Pruned volumes, reclaimed {}", size_str),
+                        NotificationLevel::Success,
+                    );
                     self.refresh_data().await;
                 }
                 Err(e) => {
                     error!("Failed to prune volumes: {}", e);
-                    self.state.add_notification(format!("Failed to prune volumes: {}", e), NotificationLevel::Error);
+                    self.state.add_notification(
+                        format!("Failed to prune volumes: {}", e),
+                        NotificationLevel::Error,
+                    );
                 }
             }
         }
@@ -504,12 +660,16 @@ impl App {
             match client.remove_network(id).await {
                 Ok(_) => {
                     info!("Network {} removed", id);
-                    self.state.add_notification("Network removed", NotificationLevel::Success);
+                    self.state
+                        .add_notification("Network removed", NotificationLevel::Success);
                     self.refresh_data().await;
                 }
                 Err(e) => {
                     error!("Failed to remove network {}: {}", id, e);
-                    self.state.add_notification(format!("Failed to remove network: {}", e), NotificationLevel::Error);
+                    self.state.add_notification(
+                        format!("Failed to remove network: {}", e),
+                        NotificationLevel::Error,
+                    );
                 }
             }
         }
@@ -522,12 +682,18 @@ impl App {
             match client.prune_networks().await {
                 Ok(count) => {
                     info!("Pruned {} networks", count);
-                    self.state.add_notification(format!("Pruned {} networks", count), NotificationLevel::Success);
+                    self.state.add_notification(
+                        format!("Pruned {} networks", count),
+                        NotificationLevel::Success,
+                    );
                     self.refresh_data().await;
                 }
                 Err(e) => {
                     error!("Failed to prune networks: {}", e);
-                    self.state.add_notification(format!("Failed to prune networks: {}", e), NotificationLevel::Error);
+                    self.state.add_notification(
+                        format!("Failed to prune networks: {}", e),
+                        NotificationLevel::Error,
+                    );
                 }
             }
         }
@@ -541,17 +707,18 @@ impl App {
                 info!("Cancelling previous log fetch");
                 self.log_fetch_rx = None;
             }
-            
+
             info!("Starting log fetch for container '{}'", container_id);
-            self.state.add_notification("Fetching logs...", NotificationLevel::Info);
-            
+            self.state
+                .add_notification("Fetching logs...", NotificationLevel::Info);
+
             // Create channel for results
             let (tx, rx) = mpsc::channel(1);
             self.log_fetch_rx = Some(rx);
-            
+
             // Clone client for the thread
             let client = client.clone();
-            
+
             // Spawn a completely separate OS thread with its own runtime
             // This is the only way to ensure bollard's blocking operations don't freeze our UI
             std::thread::spawn(move || {
@@ -560,20 +727,21 @@ impl App {
                     .enable_all()
                     .build()
                     .expect("Failed to create runtime");
-                
+
                 rt.block_on(async move {
                     // fetch_logs has per-item timeouts
                     let result = client.fetch_logs(&container_id, 100).await;
-                    
+
                     // Send result back via channel (ignore send errors if receiver dropped)
                     let _ = tx.send(result).await;
                 });
             });
         } else {
-            self.state.add_notification("Not connected to Docker", NotificationLevel::Error);
+            self.state
+                .add_notification("Not connected to Docker", NotificationLevel::Error);
         }
     }
-    
+
     /// Check if log fetch has completed and update state
     async fn check_log_fetch(&mut self) {
         if let Some(rx) = &mut self.log_fetch_rx {
@@ -594,11 +762,254 @@ impl App {
                 Ok(Some(Err(e))) => {
                     self.log_fetch_rx = None;
                     warn!("Failed to fetch logs: {}", e);
-                    self.state.add_notification(format!("Failed to fetch logs: {}", e), NotificationLevel::Error);
+                    self.state.add_notification(
+                        format!("Failed to fetch logs: {}", e),
+                        NotificationLevel::Error,
+                    );
                 }
                 Ok(None) => {
                     // Channel closed
                     self.log_fetch_rx = None;
+                }
+                Err(_) => {
+                    // Timeout - still waiting, that's fine
+                }
+            }
+        }
+    }
+
+    /// Fetch container details
+    async fn fetch_container_details(&mut self, container_id: String) {
+        if let Some(client) = &self.docker_client {
+            info!("Fetching details for container '{}'", container_id);
+
+            match client.inspect_container(&container_id).await {
+                Ok(details) => {
+                    info!("Fetched details for container '{}'", container_id);
+                    self.state.set_detail_view_content(details);
+                }
+                Err(e) => {
+                    error!(
+                        "Failed to fetch details for container '{}': {}",
+                        container_id, e
+                    );
+                    self.state.add_notification(
+                        format!("Failed to fetch details: {}", e),
+                        NotificationLevel::Error,
+                    );
+                    self.state.close_detail_view();
+                }
+            }
+        } else {
+            self.state
+                .add_notification("Not connected to Docker", NotificationLevel::Error);
+            self.state.close_detail_view();
+        }
+    }
+
+    /// Fetch image details
+    async fn fetch_image_details(&mut self, image_id: String) {
+        if let Some(client) = &self.docker_client {
+            info!("Fetching details for image '{}'", image_id);
+
+            match client.inspect_image(&image_id).await {
+                Ok(details) => {
+                    info!("Fetched details for image '{}'", image_id);
+                    self.state.set_image_detail_view_content(details);
+                }
+                Err(e) => {
+                    error!("Failed to fetch details for image '{}': {}", image_id, e);
+                    self.state.add_notification(
+                        format!("Failed to fetch image details: {}", e),
+                        NotificationLevel::Error,
+                    );
+                    self.state.close_image_detail_view();
+                }
+            }
+        } else {
+            self.state
+                .add_notification("Not connected to Docker", NotificationLevel::Error);
+            self.state.close_image_detail_view();
+        }
+    }
+
+    /// Export currently visible logs to file
+    fn export_logs(&mut self) {
+        use crate::state::LogLevelFilter;
+
+        if let Some(ref log_view) = self.state.log_view {
+            // Generate default filename
+            let timestamp = chrono::Local::now().format("%Y-%m-%d_%H-%M-%S");
+            let default_name = format!(
+                "{}_{}.log",
+                log_view.container_name.replace('/', "_"),
+                timestamp
+            );
+
+            // For now, use a simple approach - save to current directory with default name
+            let filename = &default_name;
+
+            // Helper function to detect log level from message
+            fn detect_log_level(message: &str) -> crate::state::LogLevelFilter {
+                let upper = message.to_uppercase();
+                if upper.contains("ERROR") || upper.contains("FATAL") {
+                    LogLevelFilter::Error
+                } else if upper.contains("WARN") {
+                    LogLevelFilter::Warn
+                } else if upper.contains("INFO") {
+                    LogLevelFilter::Info
+                } else {
+                    LogLevelFilter::All // Default
+                }
+            }
+
+            // Compile search regex if pattern exists
+            let search_regex = log_view
+                .search_pattern
+                .as_ref()
+                .and_then(|p| regex::Regex::new(p).ok());
+
+            // Build log content
+            let mut content = String::new();
+            content.push_str(&format!(
+                "# Logs for container: {}\n",
+                log_view.container_name
+            ));
+            content.push_str(&format!(
+                "# Exported: {}\n",
+                chrono::Local::now().to_rfc3339()
+            ));
+            if let Some(ref pattern) = log_view.search_pattern {
+                content.push_str(&format!("# Search pattern: {}\n", pattern));
+            }
+            if log_view.level_filter != LogLevelFilter::All {
+                content.push_str(&format!("# Level filter: {:?}\n", log_view.level_filter));
+            }
+            if log_view.time_filter.is_some() {
+                content.push_str(&format!(
+                    "# Time filter: logs after {}\n",
+                    log_view
+                        .time_filter
+                        .unwrap()
+                        .format("%Y-%m-%d %H:%M:%S UTC")
+                ));
+            }
+            content.push_str("#\n");
+
+            // Filter and add logs
+            let mut exported_count = 0;
+            for entry in &log_view.logs {
+                // Apply level filter
+                let level_match = match log_view.level_filter {
+                    LogLevelFilter::All => true,
+                    _ => detect_log_level(&entry.message) == log_view.level_filter,
+                };
+
+                // Apply time filter
+                let time_match = log_view.time_filter.map_or(true, |cutoff| {
+                    entry.timestamp.map_or(false, |ts| ts >= cutoff)
+                });
+
+                // Apply search filter
+                let search_match = log_view.search_pattern.as_ref().map_or(true, |pattern| {
+                    if let Some(ref re) = search_regex {
+                        re.is_match(&entry.message)
+                    } else {
+                        entry
+                            .message
+                            .to_lowercase()
+                            .contains(&pattern.to_lowercase())
+                    }
+                });
+
+                if level_match && time_match && search_match {
+                    let timestamp = entry
+                        .timestamp
+                        .map(|ts| ts.format("%Y-%m-%d %H:%M:%S").to_string())
+                        .unwrap_or_else(|| "??:??:??".to_string());
+                    content.push_str(&format!("[{}] {}\n", timestamp, entry.message));
+                    exported_count += 1;
+                }
+            }
+
+            // Write to file
+            match std::fs::write(filename, content) {
+                Ok(_) => {
+                    let msg = format!("Exported {} logs to {}", exported_count, filename);
+                    info!("{}", msg);
+                    self.state.add_notification(msg, NotificationLevel::Success);
+                }
+                Err(e) => {
+                    let msg = format!("Failed to export logs: {}", e);
+                    error!("{}", msg);
+                    self.state.add_notification(msg, NotificationLevel::Error);
+                }
+            }
+        }
+    }
+
+    /// Start fetching stats from a container (non-blocking, uses channel)
+    fn start_stats_streaming(&mut self, container_id: String) {
+        if let Some(client) = &self.docker_client {
+            // Cancel any existing pending fetch by dropping the receiver
+            if self.stats_fetch_rx.is_some() {
+                info!("Cancelling previous stats fetch");
+                self.stats_fetch_rx = None;
+            }
+
+            info!("Starting stats fetch for container '{}'", container_id);
+
+            // Create channel for results
+            let (tx, rx) = mpsc::channel(1);
+            self.stats_fetch_rx = Some(rx);
+
+            // Clone client for the thread
+            let client = client.clone();
+
+            // Spawn a separate OS thread with its own runtime
+            std::thread::spawn(move || {
+                // Create a new runtime just for this thread
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("Failed to create runtime");
+
+                rt.block_on(async move {
+                    // fetch_stats has timeout built-in
+                    let result = client.fetch_stats(&container_id).await;
+
+                    // Send result back via channel (ignore send errors if receiver dropped)
+                    let _ = tx.send(result).await;
+                });
+            });
+        } else {
+            self.state
+                .add_notification("Not connected to Docker", NotificationLevel::Error);
+        }
+    }
+
+    /// Check if stats fetch has completed and update state
+    async fn check_stats_fetch(&mut self) {
+        if let Some(rx) = &mut self.stats_fetch_rx {
+            // Try to receive with a very short timeout (non-blocking check)
+            match tokio::time::timeout(Duration::from_millis(1), rx.recv()).await {
+                Ok(Some(Ok(stats))) => {
+                    self.stats_fetch_rx = None; // Clear the receiver
+                    info!("Fetched stats");
+                    self.state.update_stats(stats);
+                }
+                Ok(Some(Err(e))) => {
+                    self.stats_fetch_rx = None;
+                    warn!("Failed to fetch stats: {}", e);
+                    self.state.set_stats_error(format!("{}", e));
+                    self.state.add_notification(
+                        format!("Failed to fetch stats: {}", e),
+                        NotificationLevel::Error,
+                    );
+                }
+                Ok(None) => {
+                    // Channel closed
+                    self.stats_fetch_rx = None;
                 }
                 Err(_) => {
                     // Timeout - still waiting, that's fine

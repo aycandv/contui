@@ -49,10 +49,8 @@ impl DockerClient {
     pub async fn prune_images(&self) -> Result<u64> {
         info!("Pruning dangling images");
 
-        let filters = std::collections::HashMap::from([(
-            "dangling".to_string(),
-            vec!["true".to_string()],
-        )]);
+        let filters =
+            std::collections::HashMap::from([("dangling".to_string(), vec!["true".to_string()])]);
 
         let result = self
             .inner()
@@ -72,16 +70,14 @@ impl From<bollard::models::ImageSummary> for ImageSummary {
         let short_id = id.chars().take(12).collect();
 
         // Determine if dangling (no repo tags or <none>:<none>)
-        let dangling = i.repo_tags.is_empty()
-            || i.repo_tags.iter().all(|t| t.contains("<none>"));
+        let dangling = i.repo_tags.is_empty() || i.repo_tags.iter().all(|t| t.contains("<none>"));
 
         Self {
             id,
             short_id,
             repo_tags: i.repo_tags.clone(),
             repo_digests: i.repo_digests.clone(),
-            created: chrono::DateTime::from_timestamp(i.created, 0)
-                .unwrap_or(chrono::Utc::now()),
+            created: chrono::DateTime::from_timestamp(i.created, 0).unwrap_or(chrono::Utc::now()),
             size: i.size,
             shared_size: i.shared_size,
             virtual_size: i.virtual_size.unwrap_or(i.size),

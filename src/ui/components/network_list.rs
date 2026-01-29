@@ -52,9 +52,7 @@ impl NetworkListWidget {
 
     /// Get the selected network
     pub fn selected_network(&self) -> Option<&NetworkSummary> {
-        self.state
-            .selected()
-            .and_then(|idx| self.networks.get(idx))
+        self.state.selected().and_then(|idx| self.networks.get(idx))
     }
 
     /// Move selection down

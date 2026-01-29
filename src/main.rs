@@ -35,19 +35,15 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     // Initialize logging (file only, not stdout to avoid polluting TUI)
-    let log_level = if cli.debug {
-        "debug"
-    } else {
-        &cli.log_level
-    };
-    
+    let log_level = if cli.debug { "debug" } else { &cli.log_level };
+
     // Write logs to file instead of stdout
     let log_file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open("/tmp/dockmon.log")
         .ok();
-    
+
     if let Some(file) = log_file {
         tracing_subscriber::fmt()
             .with_env_filter(format!("dockmon={}", log_level))
@@ -55,9 +51,7 @@ async fn main() -> Result<()> {
             .init();
     } else {
         // If can't open log file, disable logging
-        tracing_subscriber::fmt()
-            .with_env_filter("off")
-            .init();
+        tracing_subscriber::fmt().with_env_filter("off").init();
     }
 
     info!("Starting DockMon v{}", env!("CARGO_PKG_VERSION"));
@@ -76,7 +70,10 @@ async fn main() -> Result<()> {
     // Check Docker connection
     match check_docker_connection(&config).await {
         Ok(info) => {
-            info!("Connected to Docker: {} (API: {})", info.version, info.api_version);
+            info!(
+                "Connected to Docker: {} (API: {})",
+                info.version, info.api_version
+            );
         }
         Err(e) => {
             warn!("Could not connect to Docker: {}", e);
@@ -107,7 +104,7 @@ async fn check_docker_connection(config: &Config) -> anyhow::Result<ConnectionIn
     } else {
         DockerClient::from_env().await?
     };
-    
+
     client.ping().await?;
     Ok(client.connection_info().clone())
 }

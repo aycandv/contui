@@ -62,14 +62,25 @@ impl UiApp {
         }
 
         // If help is showing, any key closes it (except when toggling help)
-        if self.state.show_help && key.code != KeyCode::Char('?') && key.code != KeyCode::Char('h') {
+        if self.state.show_help && key.code != KeyCode::Char('?') && key.code != KeyCode::Char('h')
+        {
             self.state.show_help = false;
             return UiAction::None;
         }
 
-        // If log view is active, handle log view keys
+        // If log view is active, handle log view keys (log view is modal, blocks everything)
         if self.state.log_view.is_some() {
             return self.handle_log_view_key(key);
+        }
+
+        // If detail view is active, handle detail view keys (modal, blocks everything)
+        if self.state.detail_view.is_some() {
+            return self.handle_detail_view_key(key);
+        }
+
+        // If image detail view is active, handle image detail view keys (modal, blocks everything)
+        if self.state.image_detail_view.is_some() {
+            return self.handle_image_detail_view_key(key);
         }
 
         // Global key handlers
@@ -82,20 +93,50 @@ impl UiApp {
             }
 
             // Tab switching with number keys
-            KeyCode::Char('1') => { self.switch_tab(Tab::Containers); UiAction::None }
-            KeyCode::Char('2') => { self.switch_tab(Tab::Images); UiAction::None }
-            KeyCode::Char('3') => { self.switch_tab(Tab::Volumes); UiAction::None }
-            KeyCode::Char('4') => { self.switch_tab(Tab::Networks); UiAction::None }
-            KeyCode::Char('5') => { self.switch_tab(Tab::Compose); UiAction::None }
-            KeyCode::Char('6') => { self.switch_tab(Tab::System); UiAction::None }
+            KeyCode::Char('1') => {
+                self.switch_tab(Tab::Containers);
+                UiAction::None
+            }
+            KeyCode::Char('2') => {
+                self.switch_tab(Tab::Images);
+                UiAction::None
+            }
+            KeyCode::Char('3') => {
+                self.switch_tab(Tab::Volumes);
+                UiAction::None
+            }
+            KeyCode::Char('4') => {
+                self.switch_tab(Tab::Networks);
+                UiAction::None
+            }
+            KeyCode::Char('5') => {
+                self.switch_tab(Tab::Compose);
+                UiAction::None
+            }
+            KeyCode::Char('6') => {
+                self.switch_tab(Tab::System);
+                UiAction::None
+            }
 
             // Tab switching with arrow keys
-            KeyCode::Right => { self.next_tab(); UiAction::None }
-            KeyCode::Left => { self.previous_tab(); UiAction::None }
+            KeyCode::Right => {
+                self.next_tab();
+                UiAction::None
+            }
+            KeyCode::Left => {
+                self.previous_tab();
+                UiAction::None
+            }
 
             // Navigation between panels
-            KeyCode::Tab => { self.next_panel(); UiAction::None }
-            KeyCode::BackTab => { self.previous_panel(); UiAction::None }
+            KeyCode::Tab => {
+                self.next_panel();
+                UiAction::None
+            }
+            KeyCode::BackTab => {
+                self.previous_panel();
+                UiAction::None
+            }
 
             // Container actions (when on Containers tab) - must come before unguarded 'k'
             KeyCode::Char('s') if self.state.current_tab == Tab::Containers => {
@@ -107,7 +148,9 @@ impl UiApp {
             KeyCode::Char('p') if self.state.current_tab == Tab::Containers => {
                 self.handle_pause_action()
             }
-            KeyCode::Char('k') if self.state.current_tab == Tab::Containers && key.modifiers.is_empty() => {
+            KeyCode::Char('k')
+                if self.state.current_tab == Tab::Containers && key.modifiers.is_empty() =>
+            {
                 self.handle_kill_action()
             }
             KeyCode::Char('d') if self.state.current_tab == Tab::Containers => {
@@ -115,6 +158,17 @@ impl UiApp {
             }
             KeyCode::Char('l') if self.state.current_tab == Tab::Containers => {
                 self.handle_logs_action()
+            }
+            KeyCode::Char('m') if self.state.current_tab == Tab::Containers => {
+                self.handle_stats_action()
+            }
+            KeyCode::Char('i') if self.state.current_tab == Tab::Containers => {
+                self.handle_inspect_action()
+            }
+            // Toggle stats follow when stats panel is visible
+            KeyCode::Char('f') if self.state.stats_view.is_some() => {
+                self.state.toggle_stats_follow();
+                UiAction::None
             }
 
             // Image actions (when on Images tab)
@@ -226,7 +280,7 @@ impl UiApp {
                 return self.handle_log_search_key(key);
             }
         }
-        
+
         match key.code {
             // Exit log view
             KeyCode::Char('q') | KeyCode::Esc => {
@@ -263,19 +317,23 @@ impl UiApp {
             }
             // Log level filters
             KeyCode::Char('0') => {
-                self.state.set_log_level_filter(crate::state::LogLevelFilter::All);
+                self.state
+                    .set_log_level_filter(crate::state::LogLevelFilter::All);
                 UiAction::None
             }
             KeyCode::Char('1') => {
-                self.state.set_log_level_filter(crate::state::LogLevelFilter::Error);
+                self.state
+                    .set_log_level_filter(crate::state::LogLevelFilter::Error);
                 UiAction::None
             }
             KeyCode::Char('2') => {
-                self.state.set_log_level_filter(crate::state::LogLevelFilter::Warn);
+                self.state
+                    .set_log_level_filter(crate::state::LogLevelFilter::Warn);
                 UiAction::None
             }
             KeyCode::Char('3') => {
-                self.state.set_log_level_filter(crate::state::LogLevelFilter::Info);
+                self.state
+                    .set_log_level_filter(crate::state::LogLevelFilter::Info);
                 UiAction::None
             }
             // Time filter
@@ -308,6 +366,10 @@ impl UiApp {
                 self.state.clear_time_filter();
                 UiAction::None
             }
+            // Export logs to file
+            KeyCode::Char('s') => {
+                return UiAction::ExportLogs;
+            }
             // Scroll up
             KeyCode::Up | KeyCode::PageUp => {
                 let amount = if key.code == KeyCode::PageUp { 10 } else { 1 };
@@ -339,11 +401,79 @@ impl UiApp {
             _ => UiAction::None,
         }
     }
-    
+
+    /// Handle detail view keys
+    fn handle_detail_view_key(&mut self, key: KeyEvent) -> UiAction {
+        match key.code {
+            // Exit detail view
+            KeyCode::Char('q') | KeyCode::Esc => {
+                self.state.close_detail_view();
+                UiAction::None
+            }
+            // Scroll up
+            KeyCode::Up | KeyCode::PageUp => {
+                let amount = if key.code == KeyCode::PageUp { 10 } else { 3 };
+                self.state.scroll_detail_view_up(amount);
+                UiAction::None
+            }
+            // Scroll down
+            KeyCode::Down | KeyCode::PageDown => {
+                let amount = if key.code == KeyCode::PageDown { 10 } else { 3 };
+                self.state.scroll_detail_view_down(amount);
+                UiAction::None
+            }
+            // Home to top
+            KeyCode::Home => {
+                self.state.scroll_detail_view_up(9999);
+                UiAction::None
+            }
+            // End to bottom
+            KeyCode::End => {
+                self.state.scroll_detail_view_down(9999);
+                UiAction::None
+            }
+            _ => UiAction::None,
+        }
+    }
+
+    /// Handle image detail view keys
+    fn handle_image_detail_view_key(&mut self, key: KeyEvent) -> UiAction {
+        match key.code {
+            // Exit image detail view
+            KeyCode::Char('q') | KeyCode::Esc => {
+                self.state.close_image_detail_view();
+                UiAction::None
+            }
+            // Scroll up
+            KeyCode::Up | KeyCode::PageUp => {
+                let amount = if key.code == KeyCode::PageUp { 10 } else { 3 };
+                self.state.scroll_image_detail_view_up(amount);
+                UiAction::None
+            }
+            // Scroll down
+            KeyCode::Down | KeyCode::PageDown => {
+                let amount = if key.code == KeyCode::PageDown { 10 } else { 3 };
+                self.state.scroll_image_detail_view_down(amount);
+                UiAction::None
+            }
+            // Home to top
+            KeyCode::Home => {
+                self.state.scroll_image_detail_view_up(9999);
+                UiAction::None
+            }
+            // End to bottom
+            KeyCode::End => {
+                self.state.scroll_image_detail_view_down(9999);
+                UiAction::None
+            }
+            _ => UiAction::None,
+        }
+    }
+
     /// Handle keys when in log search input mode
     fn handle_log_search_key(&mut self, key: KeyEvent) -> UiAction {
         use ratatui::crossterm::event::KeyCode;
-        
+
         match key.code {
             KeyCode::Esc => {
                 self.state.hide_log_search();
@@ -358,7 +488,10 @@ impl UiApp {
                 // Remove last character from search pattern
                 if let Some(ref mut log_view) = self.state.log_view {
                     if let Some(ref pattern) = log_view.search_pattern {
-                        let new_pattern: String = pattern.chars().take(pattern.len().saturating_sub(1)).collect();
+                        let new_pattern: String = pattern
+                            .chars()
+                            .take(pattern.len().saturating_sub(1))
+                            .collect();
                         if new_pattern.is_empty() {
                             self.state.clear_log_search();
                         } else {
@@ -396,7 +529,11 @@ impl UiApp {
 
     /// Handle start/stop action
     fn handle_start_stop_action(&mut self) -> UiAction {
-        if let Some(container) = self.state.containers.get(self.state.container_list_selected) {
+        if let Some(container) = self
+            .state
+            .containers
+            .get(self.state.container_list_selected)
+        {
             let id = container.id.clone();
             match container.state {
                 ContainerState::Running => {
@@ -428,7 +565,11 @@ impl UiApp {
 
     /// Handle pause action
     fn handle_pause_action(&mut self) -> UiAction {
-        if let Some(container) = self.state.containers.get(self.state.container_list_selected) {
+        if let Some(container) = self
+            .state
+            .containers
+            .get(self.state.container_list_selected)
+        {
             let id = container.id.clone();
             if container.state == ContainerState::Paused {
                 UiAction::UnpauseContainer(id)
@@ -442,10 +583,18 @@ impl UiApp {
 
     /// Handle kill action (with confirmation)
     fn handle_kill_action(&mut self) -> UiAction {
-        if let Some(container) = self.state.containers.get(self.state.container_list_selected) {
-            let name = container.names.first().cloned().unwrap_or_else(|| container.short_id.clone());
+        if let Some(container) = self
+            .state
+            .containers
+            .get(self.state.container_list_selected)
+        {
+            let name = container
+                .names
+                .first()
+                .cloned()
+                .unwrap_or_else(|| container.short_id.clone());
             let id = container.id.clone();
-            
+
             self.state.confirm_dialog = Some(ConfirmAction {
                 message: format!("Kill container '{}'?", name),
                 action: UiAction::KillContainer(id),
@@ -456,10 +605,18 @@ impl UiApp {
 
     /// Handle remove action (with confirmation)
     fn handle_remove_action(&mut self) -> UiAction {
-        if let Some(container) = self.state.containers.get(self.state.container_list_selected) {
-            let name = container.names.first().cloned().unwrap_or_else(|| container.short_id.clone());
+        if let Some(container) = self
+            .state
+            .containers
+            .get(self.state.container_list_selected)
+        {
+            let name = container
+                .names
+                .first()
+                .cloned()
+                .unwrap_or_else(|| container.short_id.clone());
             let id = container.id.clone();
-            
+
             self.state.confirm_dialog = Some(ConfirmAction {
                 message: format!("Remove container '{}'?", name),
                 action: UiAction::RemoveContainer(id),
@@ -470,11 +627,47 @@ impl UiApp {
 
     /// Handle logs action
     fn handle_logs_action(&mut self) -> UiAction {
-        if let Some(container) = self.state.containers.get(self.state.container_list_selected) {
+        if let Some(container) = self
+            .state
+            .containers
+            .get(self.state.container_list_selected)
+        {
             let id = container.id.clone();
 
             // Return action to start log streaming (log view will be opened in handle_ui_action)
             UiAction::ShowContainerLogs(id)
+        } else {
+            UiAction::None
+        }
+    }
+
+    /// Handle stats action
+    fn handle_stats_action(&mut self) -> UiAction {
+        if let Some(container) = self
+            .state
+            .containers
+            .get(self.state.container_list_selected)
+        {
+            let id = container.id.clone();
+
+            // Return action to show stats (stats view will be opened in handle_ui_action)
+            UiAction::ShowContainerStats(id)
+        } else {
+            UiAction::None
+        }
+    }
+
+    /// Handle inspect action
+    fn handle_inspect_action(&mut self) -> UiAction {
+        if let Some(container) = self
+            .state
+            .containers
+            .get(self.state.container_list_selected)
+        {
+            let id = container.id.clone();
+
+            // Return action to show container details
+            UiAction::ShowContainerDetails(id)
         } else {
             UiAction::None
         }
@@ -486,10 +679,14 @@ impl UiApp {
             let name = if image.dangling {
                 "<dangling>".to_string()
             } else {
-                image.repo_tags.first().cloned().unwrap_or_else(|| image.short_id.clone())
+                image
+                    .repo_tags
+                    .first()
+                    .cloned()
+                    .unwrap_or_else(|| image.short_id.clone())
             };
             let id = image.id.clone();
-            
+
             self.state.confirm_dialog = Some(ConfirmAction {
                 message: format!("Remove image '{}'?", name),
                 action: UiAction::RemoveImage(id),
@@ -511,7 +708,7 @@ impl UiApp {
     fn handle_image_inspect_action(&mut self) -> UiAction {
         if let Some(image) = self.state.images.get(self.state.image_list_selected) {
             let id = image.id.clone();
-            UiAction::InspectImage(id)
+            UiAction::ShowImageDetails(id)
         } else {
             UiAction::None
         }
@@ -521,7 +718,7 @@ impl UiApp {
     fn handle_volume_remove_action(&mut self) -> UiAction {
         if let Some(volume) = self.state.volumes.get(self.state.volume_list_selected) {
             let name = volume.name.clone();
-            
+
             self.state.confirm_dialog = Some(ConfirmAction {
                 message: format!("Remove volume '{}'", name),
                 action: UiAction::RemoveVolume(name),
@@ -544,7 +741,7 @@ impl UiApp {
         if let Some(network) = self.state.networks.get(self.state.network_list_selected) {
             let name = network.name.clone();
             let id = network.id.clone();
-            
+
             self.state.confirm_dialog = Some(ConfirmAction {
                 message: format!("Remove network '{}'", name),
                 action: UiAction::RemoveNetwork(id),
@@ -613,6 +810,9 @@ impl UiApp {
     pub fn draw(&self, frame: &mut Frame) {
         let area = frame.area();
 
+        // Full screen clear first to prevent any ghost content
+        frame.render_widget(Clear, area);
+
         // Create the main layout
         let main_layout = Layout::default()
             .direction(Direction::Vertical)
@@ -636,6 +836,20 @@ impl UiApp {
         // Render log viewer if active (on top of everything)
         if let Some(ref log_view) = self.state.log_view {
             crate::ui::components::log_viewer::render_log_viewer(frame, area, log_view);
+        }
+
+        // Render detail viewer if active (on top of everything)
+        if let Some(ref detail_view) = self.state.detail_view {
+            crate::ui::components::detail_viewer::render_detail_viewer(frame, area, detail_view);
+        }
+
+        // Render image detail viewer if active (on top of everything)
+        if let Some(ref image_detail_view) = self.state.image_detail_view {
+            crate::ui::components::image_detail_viewer::render_image_detail_viewer(
+                frame,
+                area,
+                image_detail_view,
+            );
         }
 
         // Render confirmation dialog if active
@@ -668,7 +882,7 @@ impl UiApp {
             .direction(Direction::Vertical)
             .margin(2)
             .constraints([
-                Constraint::Min(1), // Message
+                Constraint::Min(1),    // Message
                 Constraint::Length(1), // Spacer
                 Constraint::Length(1), // Buttons
             ])
@@ -677,7 +891,11 @@ impl UiApp {
         // Render dialog block with title
         let block = Block::default()
             .title(" ⚠️ Confirmation ")
-            .title_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+            .title_style(
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::Yellow));
         frame.render_widget(block, popup_area);
@@ -692,48 +910,60 @@ impl UiApp {
         // Render buttons hint
         let buttons = Line::from(vec![
             Span::styled("[", Style::default().fg(Color::Gray)),
-            Span::styled("y", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "y",
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("] Yes   [", Style::default().fg(Color::Gray)),
-            Span::styled("n", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "n",
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            ),
             Span::styled("] No", Style::default().fg(Color::Gray)),
         ]);
-        let buttons_para = Paragraph::new(buttons)
-            .alignment(ratatui::layout::Alignment::Center);
+        let buttons_para = Paragraph::new(buttons).alignment(ratatui::layout::Alignment::Center);
         frame.render_widget(buttons_para, layout[2]);
     }
 
     /// Render notification toast
-    fn render_notification(&self, frame: &mut Frame, area: Rect, notif: &crate::state::Notification) {
+    fn render_notification(
+        &self,
+        frame: &mut Frame,
+        area: Rect,
+        notif: &crate::state::Notification,
+    ) {
         use ratatui::widgets::{Clear, Paragraph};
-        
+
         let color = match notif.level {
             crate::core::NotificationLevel::Info => Color::Blue,
             crate::core::NotificationLevel::Success => Color::Green,
             crate::core::NotificationLevel::Warning => Color::Yellow,
             crate::core::NotificationLevel::Error => Color::Red,
         };
-        
+
         let text = format!(" {} ", notif.message);
         let width = text.len() as u16 + 2;
         let height = 3;
-        
+
         // Position at top-right of screen
         let x = area.width.saturating_sub(width + 2);
         let y = 1;
-        
+
         if x > 0 && area.height > height + y {
             let notif_area = Rect::new(x, y, width.min(area.width - x), height);
-            
+
             frame.render_widget(Clear, notif_area);
-            
+
             let paragraph = Paragraph::new(text)
                 .block(
                     Block::default()
                         .borders(Borders::ALL)
-                        .border_style(Style::default().fg(color))
+                        .border_style(Style::default().fg(color)),
                 )
                 .style(Style::default().fg(color));
-            
+
             frame.render_widget(paragraph, notif_area);
         }
     }
@@ -747,7 +977,12 @@ impl UiApp {
         };
 
         let header_spans = vec![
-            Span::styled(" 🐳 DockMon ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                " 🐳 DockMon ",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled(
                 format!("v{} ", env!("CARGO_PKG_VERSION")),
                 Style::default().fg(Color::Gray),
@@ -755,12 +990,18 @@ impl UiApp {
             Span::raw("| "),
             Span::styled(
                 self.state.current_tab.name(),
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::raw(" | "),
             Span::styled(status_indicator.0, Style::default().fg(status_indicator.1)),
             Span::styled(
-                if self.state.docker_connected { " Connected " } else { " Disconnected " },
+                if self.state.docker_connected {
+                    " Connected "
+                } else {
+                    " Disconnected "
+                },
                 Style::default().fg(status_indicator.1),
             ),
         ];
@@ -777,7 +1018,7 @@ impl UiApp {
         // Create a layout for sidebar + main panel
         // Use min 12 chars for sidebar, max 20
         let sidebar_width = (area.width / 5).clamp(12, 20);
-        
+
         let content_layout = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
@@ -787,7 +1028,7 @@ impl UiApp {
             .split(area);
 
         self.render_sidebar(frame, content_layout[0]);
-        
+
         // Render tab-specific content
         match self.state.current_tab {
             Tab::Containers if !self.state.containers.is_empty() => {
@@ -810,6 +1051,10 @@ impl UiApp {
 
     /// Render volumes view
     fn render_volumes_view(&self, frame: &mut Frame, area: Rect) {
+        // Fill area with black background first
+        let bg = Block::default().style(Style::default().bg(Color::Black));
+        frame.render_widget(bg, area);
+
         let mut widget = crate::ui::components::VolumeListWidget::new(self.state.volumes.clone());
         if !self.state.volumes.is_empty() {
             widget.set_selected(Some(self.state.volume_list_selected));
@@ -822,6 +1067,10 @@ impl UiApp {
 
     /// Render networks view
     fn render_networks_view(&self, frame: &mut Frame, area: Rect) {
+        // Fill area with black background first
+        let bg = Block::default().style(Style::default().bg(Color::Black));
+        frame.render_widget(bg, area);
+
         let mut widget = crate::ui::components::NetworkListWidget::new(self.state.networks.clone());
         if !self.state.networks.is_empty() {
             widget.set_selected(Some(self.state.network_list_selected));
@@ -834,6 +1083,10 @@ impl UiApp {
 
     /// Render images view
     fn render_images_view(&self, frame: &mut Frame, area: Rect) {
+        // Fill area with black background first
+        let bg = Block::default().style(Style::default().bg(Color::Black));
+        frame.render_widget(bg, area);
+
         // Create image list widget
         let mut widget = crate::ui::components::ImageListWidget::new(self.state.images.clone());
         if !self.state.images.is_empty() {
@@ -849,8 +1102,29 @@ impl UiApp {
     fn render_containers_split_view(&self, frame: &mut Frame, area: Rect) {
         use crate::ui::components::{ContainerDetailPanel, SplitLayout};
 
+        // Fill area with black background first
+        let bg = Block::default().style(Style::default().bg(Color::Black));
+        frame.render_widget(bg, area);
+
         // Split area: 60% for list, 40% for detail
         let (list_area, detail_area) = SplitLayout::horizontal_split(area, 60);
+
+        // Check if stats panel is open
+        let show_stats = self.state.stats_view.is_some();
+
+        // Split list area vertically if stats panel is shown
+        let (table_area, stats_area) = if show_stats {
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Min(3),
+                    Constraint::Length(crate::ui::components::stats_viewer::STATS_PANEL_HEIGHT),
+                ])
+                .split(list_area);
+            (chunks[0], Some(chunks[1]))
+        } else {
+            (list_area, None)
+        };
 
         // Create container list
         let mut widget = ContainerListWidget::new(self.state.containers.clone());
@@ -860,10 +1134,19 @@ impl UiApp {
         let table = widget.build_table();
         let mut table_state = ratatui::widgets::TableState::default();
         table_state.select(Some(self.state.container_list_selected));
-        frame.render_stateful_widget(table, list_area, &mut table_state);
+        frame.render_stateful_widget(table, table_area, &mut table_state);
+
+        // Render stats panel if visible
+        if let (Some(stats_area), Some(stats_view)) = (stats_area, &self.state.stats_view) {
+            crate::ui::components::stats_viewer::render_stats_panel(frame, stats_area, stats_view);
+        }
 
         // Render detail panel for selected container
-        if let Some(container) = self.state.containers.get(self.state.container_list_selected) {
+        if let Some(container) = self
+            .state
+            .containers
+            .get(self.state.container_list_selected)
+        {
             let detail = ContainerDetailPanel::draw(container);
             frame.render_widget(detail, detail_area);
         } else {
@@ -876,13 +1159,17 @@ impl UiApp {
 
     /// Render the sidebar with tabs
     fn render_sidebar(&self, frame: &mut Frame, area: Rect) {
+        // Fill area with black background first
+        let bg = Block::default().style(Style::default().bg(Color::Black));
+        frame.render_widget(bg, area);
+
         let mut lines = vec![];
 
         for tab in Tab::all() {
             let is_selected = self.state.current_tab == *tab;
             let shortcut = tab.shortcut();
             let name = tab.name();
-            
+
             let style = if is_selected {
                 Style::default()
                     .fg(Color::Green)
@@ -901,8 +1188,11 @@ impl UiApp {
             lines.push(Line::from(Span::styled(line_text, style)));
         }
 
-        let sidebar = Paragraph::new(Text::from(lines))
-            .block(Block::default().borders(Borders::RIGHT).border_style(Color::DarkGray));
+        let sidebar = Paragraph::new(Text::from(lines)).block(
+            Block::default()
+                .borders(Borders::RIGHT)
+                .border_style(Color::DarkGray),
+        );
 
         frame.render_widget(sidebar, area);
     }
@@ -919,6 +1209,10 @@ impl UiApp {
 
     /// Render simple tabs (Images, Volumes, etc.)
     fn render_simple_tab(&self, frame: &mut Frame, area: Rect) {
+        // Fill area with black background first
+        let bg = Block::default().style(Style::default().bg(Color::Black));
+        frame.render_widget(bg, area);
+
         let block = Block::default()
             .title(self.state.current_tab.name())
             .borders(Borders::ALL)
@@ -947,12 +1241,12 @@ impl UiApp {
             }
             Tab::Containers => {
                 // This should only happen when containers list is empty
-                "No containers found.\n\nDocker may not be running or you may not have permissions.".to_string()
+                "No containers found.\n\nDocker may not be running or you may not have permissions."
+                    .to_string()
             }
         };
 
-        let paragraph = Paragraph::new(content)
-            .wrap(Wrap { trim: true });
+        let paragraph = Paragraph::new(content).wrap(Wrap { trim: true });
 
         frame.render_widget(paragraph, inner_area);
     }
@@ -960,13 +1254,17 @@ impl UiApp {
     /// Render the footer
     fn render_footer(&self, frame: &mut Frame, area: Rect) {
         let help_text = if self.state.log_view.is_some() {
-            Cow::Borrowed(" [↑/↓]Scroll [PgUp/PgDn]Page [r]Refresh [f]Follow [Home]Top [End]Bottom [q]Close ")
+            Cow::Borrowed(" [↑/↓]Scroll [r]Refresh [f]Follow [/]Search [s]Save [q]Close ")
+        } else if self.state.detail_view.is_some() {
+            Cow::Borrowed(" [↑/↓]Scroll [q]Close ")
+        } else if self.state.image_detail_view.is_some() {
+            Cow::Borrowed(" [↑/↓]Scroll [q]Close ")
         } else if self.state.confirm_dialog.is_some() {
             Cow::Borrowed(" [y]Yes [n]No ")
         } else if self.state.show_help {
             Cow::Borrowed(" Press any key to close help ")
         } else if self.state.current_tab == Tab::Containers && !self.state.containers.is_empty() {
-            Cow::Borrowed(" [↑/↓]Select [s]Start [p]Pause [r]Restart [k]Kill [d]Delete [l]Logs [?]Help [q]Quit ")
+            Cow::Borrowed(" [↑/↓]Select [s]Start [p]Pause [r]Restart [k]Kill [d]Delete [l]Logs [m]Stats [i]Inspect [?]Help [q]Quit ")
         } else if self.state.current_tab == Tab::Images && !self.state.images.is_empty() {
             Cow::Borrowed(" [↑/↓]Select [d]Delete [p]Prune [i]Inspect [?]Help [q]Quit ")
         } else if self.state.current_tab == Tab::Volumes && !self.state.volumes.is_empty() {
@@ -978,7 +1276,9 @@ impl UiApp {
         };
 
         let style = if self.state.confirm_dialog.is_some() {
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(Color::Gray).bg(Color::Black)
         };
@@ -1009,12 +1309,14 @@ Containers Tab:
   k                Kill container
   d                Delete container
   l                View logs
+  m                Toggle stats panel
+  i                Inspect container (detailed info)
 
 Images Tab:
   ↑/↓ or j/k       Select image
   d                Delete image
   p                Prune dangling images
-  i                Inspect image
+  i                Inspect image (detailed info)
 
 Volumes Tab:
   ↑/↓ or j/k       Select volume
@@ -1034,8 +1336,22 @@ Log View:
   n/N              Next/previous match
   0-3              Filter: 0=All, 1=Error, 2=Warn, 3=Info
   t/T              Time filter: cycle/clear
+  s                Save logs to file
   Home/End         Jump to top/bottom
   q or Esc         Close log view
+
+Stats Panel (toggle with 'm'):
+  f                Toggle live/pause updates
+
+Detail View (inspect container):
+  ↑/↓ or PgUp/PgDn Scroll
+  Home/End         Jump to top/bottom
+  q or Esc         Close detail view
+
+Image Detail View (inspect image):
+  ↑/↓ or PgUp/PgDn Scroll
+  Home/End         Jump to top/bottom
+  q or Esc         Close detail view
 
 Global:
   q or Ctrl+C      Quit

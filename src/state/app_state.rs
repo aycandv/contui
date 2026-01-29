@@ -42,6 +42,15 @@ pub struct AppState {
     // Log view state
     pub log_view: Option<LogViewState>,
 
+    // Stats view state
+    pub stats_view: Option<StatsViewState>,
+
+    // Detail view state
+    pub detail_view: Option<DetailViewState>,
+
+    // Image detail view state
+    pub image_detail_view: Option<ImageDetailViewState>,
+
     // Async operations tracking
     pub loading: bool,
 }
@@ -73,6 +82,34 @@ pub struct LogViewState {
     pub level_filter: LogLevelFilter,
     pub time_filter: Option<chrono::DateTime<chrono::Utc>>, // show logs after this time
     pub show_time_input: bool,
+}
+
+/// Stats view state
+#[derive(Debug, Clone)]
+pub struct StatsViewState {
+    pub container_id: String,
+    pub container_name: String,
+    pub stats: Option<crate::docker::StatsEntry>,
+    pub follow: bool,
+    pub error: Option<String>,
+}
+
+/// Detail view state
+#[derive(Debug, Clone)]
+pub struct DetailViewState {
+    pub container_id: String,
+    pub container_name: String,
+    pub details: Option<crate::docker::ContainerDetails>,
+    pub scroll_offset: usize,
+}
+
+/// Image detail view state
+#[derive(Debug, Clone)]
+pub struct ImageDetailViewState {
+    pub image_id: String,
+    pub image_name: String,
+    pub details: Option<crate::docker::ImageDetails>,
+    pub scroll_offset: usize,
 }
 
 /// Panel focus areas
@@ -116,6 +153,9 @@ impl AppState {
             show_help: false,
             notifications: vec![],
             log_view: None,
+            stats_view: None,
+            detail_view: None,
+            image_detail_view: None,
             confirm_dialog: None,
             loading: false,
         }
@@ -151,9 +191,7 @@ impl AppState {
             if self.image_list_selected >= self.images.len() {
                 self.image_list_selected = self.images.len() - 1;
             }
-            self.selected_image = Some(
-                self.images[self.image_list_selected].id.clone()
-            );
+            self.selected_image = Some(self.images[self.image_list_selected].id.clone());
         } else {
             self.image_list_selected = 0;
             self.selected_image = None;
@@ -165,11 +203,8 @@ impl AppState {
         if self.images.is_empty() {
             return;
         }
-        self.image_list_selected = 
-            (self.image_list_selected + 1) % self.images.len();
-        self.selected_image = Some(
-            self.images[self.image_list_selected].id.clone()
-        );
+        self.image_list_selected = (self.image_list_selected + 1) % self.images.len();
+        self.selected_image = Some(self.images[self.image_list_selected].id.clone());
     }
 
     /// Navigate to previous image in list
@@ -182,9 +217,7 @@ impl AppState {
         } else {
             self.image_list_selected -= 1;
         }
-        self.selected_image = Some(
-            self.images[self.image_list_selected].id.clone()
-        );
+        self.selected_image = Some(self.images[self.image_list_selected].id.clone());
     }
 
     /// Update containers list
@@ -195,9 +228,8 @@ impl AppState {
             if self.container_list_selected >= self.containers.len() {
                 self.container_list_selected = self.containers.len() - 1;
             }
-            self.selected_container = Some(
-                self.containers[self.container_list_selected].id.clone()
-            );
+            self.selected_container =
+                Some(self.containers[self.container_list_selected].id.clone());
         } else {
             self.container_list_selected = 0;
             self.selected_container = None;
@@ -209,11 +241,8 @@ impl AppState {
         if self.containers.is_empty() {
             return;
         }
-        self.container_list_selected = 
-            (self.container_list_selected + 1) % self.containers.len();
-        self.selected_container = Some(
-            self.containers[self.container_list_selected].id.clone()
-        );
+        self.container_list_selected = (self.container_list_selected + 1) % self.containers.len();
+        self.selected_container = Some(self.containers[self.container_list_selected].id.clone());
     }
 
     /// Navigate to previous container in list
@@ -226,9 +255,7 @@ impl AppState {
         } else {
             self.container_list_selected -= 1;
         }
-        self.selected_container = Some(
-            self.containers[self.container_list_selected].id.clone()
-        );
+        self.selected_container = Some(self.containers[self.container_list_selected].id.clone());
     }
 
     /// Update volumes list
@@ -239,9 +266,7 @@ impl AppState {
             if self.volume_list_selected >= self.volumes.len() {
                 self.volume_list_selected = self.volumes.len() - 1;
             }
-            self.selected_volume = Some(
-                self.volumes[self.volume_list_selected].name.clone()
-            );
+            self.selected_volume = Some(self.volumes[self.volume_list_selected].name.clone());
         } else {
             self.volume_list_selected = 0;
             self.selected_volume = None;
@@ -253,11 +278,8 @@ impl AppState {
         if self.volumes.is_empty() {
             return;
         }
-        self.volume_list_selected = 
-            (self.volume_list_selected + 1) % self.volumes.len();
-        self.selected_volume = Some(
-            self.volumes[self.volume_list_selected].name.clone()
-        );
+        self.volume_list_selected = (self.volume_list_selected + 1) % self.volumes.len();
+        self.selected_volume = Some(self.volumes[self.volume_list_selected].name.clone());
     }
 
     /// Navigate to previous volume in list
@@ -270,9 +292,7 @@ impl AppState {
         } else {
             self.volume_list_selected -= 1;
         }
-        self.selected_volume = Some(
-            self.volumes[self.volume_list_selected].name.clone()
-        );
+        self.selected_volume = Some(self.volumes[self.volume_list_selected].name.clone());
     }
 
     /// Update networks list
@@ -283,9 +303,7 @@ impl AppState {
             if self.network_list_selected >= self.networks.len() {
                 self.network_list_selected = self.networks.len() - 1;
             }
-            self.selected_network = Some(
-                self.networks[self.network_list_selected].id.clone()
-            );
+            self.selected_network = Some(self.networks[self.network_list_selected].id.clone());
         } else {
             self.network_list_selected = 0;
             self.selected_network = None;
@@ -297,11 +315,8 @@ impl AppState {
         if self.networks.is_empty() {
             return;
         }
-        self.network_list_selected = 
-            (self.network_list_selected + 1) % self.networks.len();
-        self.selected_network = Some(
-            self.networks[self.network_list_selected].id.clone()
-        );
+        self.network_list_selected = (self.network_list_selected + 1) % self.networks.len();
+        self.selected_network = Some(self.networks[self.network_list_selected].id.clone());
     }
 
     /// Navigate to previous network in list
@@ -314,9 +329,7 @@ impl AppState {
         } else {
             self.network_list_selected -= 1;
         }
-        self.selected_network = Some(
-            self.networks[self.network_list_selected].id.clone()
-        );
+        self.selected_network = Some(self.networks[self.network_list_selected].id.clone());
     }
 
     /// Set Docker connection status
@@ -422,10 +435,10 @@ impl AppState {
                 log_view.current_match = None;
                 return;
             }
-            
+
             log_view.search_pattern = Some(pattern.to_string());
             log_view.search_matches.clear();
-            
+
             // Find all matching log entries (case-insensitive)
             let pattern_lower = pattern.to_lowercase();
             for (i, entry) in log_view.logs.iter().enumerate() {
@@ -433,14 +446,14 @@ impl AppState {
                     log_view.search_matches.push(i);
                 }
             }
-            
+
             // Set current match to first one
             log_view.current_match = if log_view.search_matches.is_empty() {
                 None
             } else {
                 Some(0)
             };
-            
+
             // Scroll to first match if found
             if let Some(&match_idx) = log_view.search_matches.first() {
                 log_view.scroll_offset = match_idx;
@@ -516,17 +529,23 @@ impl AppState {
     pub fn set_time_filter(&mut self, input: &str) {
         if let Some(log_view) = &mut self.log_view {
             let now = chrono::Utc::now();
-            
+
             let cutoff = if input.ends_with('m') {
-                input.trim_end_matches('m').parse::<i64>()
+                input
+                    .trim_end_matches('m')
+                    .parse::<i64>()
                     .ok()
                     .map(|mins| now - chrono::Duration::minutes(mins))
             } else if input.ends_with('h') {
-                input.trim_end_matches('h').parse::<i64>()
+                input
+                    .trim_end_matches('h')
+                    .parse::<i64>()
                     .ok()
                     .map(|hours| now - chrono::Duration::hours(hours))
             } else if input.ends_with('d') {
-                input.trim_end_matches('d').parse::<i64>()
+                input
+                    .trim_end_matches('d')
+                    .parse::<i64>()
                     .ok()
                     .map(|days| now - chrono::Duration::days(days))
             } else {
@@ -535,7 +554,7 @@ impl AppState {
                     .ok()
                     .map(|dt| dt.with_timezone(&chrono::Utc))
             };
-            
+
             log_view.time_filter = cutoff;
             log_view.scroll_offset = 0;
         }
@@ -546,6 +565,123 @@ impl AppState {
         if let Some(log_view) = &mut self.log_view {
             log_view.time_filter = None;
             log_view.scroll_offset = 0;
+        }
+    }
+
+    // ==================== Stats View Methods ====================
+
+    /// Open stats view for a container
+    pub fn open_stats_view(&mut self, container_id: String, container_name: String) {
+        self.stats_view = Some(StatsViewState {
+            container_id,
+            container_name,
+            stats: None,
+            follow: true,
+            error: None,
+        });
+    }
+
+    /// Close stats view
+    pub fn close_stats_view(&mut self) {
+        self.stats_view = None;
+    }
+
+    /// Update stats in stats view
+    pub fn update_stats(&mut self, stats: crate::docker::StatsEntry) {
+        if let Some(stats_view) = &mut self.stats_view {
+            stats_view.stats = Some(stats);
+            stats_view.error = None;
+        }
+    }
+
+    /// Set stats error
+    pub fn set_stats_error(&mut self, error: String) {
+        if let Some(stats_view) = &mut self.stats_view {
+            stats_view.error = Some(error);
+        }
+    }
+
+    /// Toggle stats follow mode
+    pub fn toggle_stats_follow(&mut self) {
+        if let Some(stats_view) = &mut self.stats_view {
+            stats_view.follow = !stats_view.follow;
+        }
+    }
+
+    // ==================== Detail View Methods ====================
+
+    /// Open detail view for a container
+    pub fn open_detail_view(&mut self, container_id: String, container_name: String) {
+        self.detail_view = Some(DetailViewState {
+            container_id,
+            container_name,
+            details: None,
+            scroll_offset: 0,
+        });
+    }
+
+    /// Close detail view
+    pub fn close_detail_view(&mut self) {
+        self.detail_view = None;
+    }
+
+    /// Set detail view content
+    pub fn set_detail_view_content(&mut self, details: crate::docker::ContainerDetails) {
+        if let Some(detail_view) = &mut self.detail_view {
+            detail_view.details = Some(details);
+        }
+    }
+
+    /// Scroll up in detail view
+    pub fn scroll_detail_view_up(&mut self, amount: usize) {
+        if let Some(detail_view) = &mut self.detail_view {
+            detail_view.scroll_offset = detail_view.scroll_offset.saturating_sub(amount);
+        }
+    }
+
+    /// Scroll down in detail view
+    pub fn scroll_detail_view_down(&mut self, amount: usize) {
+        if let Some(detail_view) = &mut self.detail_view {
+            detail_view.scroll_offset += amount;
+        }
+    }
+
+    // ==================== Image Detail View Methods ====================
+
+    /// Open image detail view
+    pub fn open_image_detail_view(&mut self, image_id: String, image_name: String) {
+        self.image_detail_view = Some(ImageDetailViewState {
+            image_id,
+            image_name,
+            details: None,
+            scroll_offset: 0,
+        });
+    }
+
+    /// Close image detail view
+    pub fn close_image_detail_view(&mut self) {
+        self.image_detail_view = None;
+    }
+
+    /// Set image detail view content
+    pub fn set_image_detail_view_content(&mut self, details: crate::docker::ImageDetails) {
+        if let Some(image_detail_view) = &mut self.image_detail_view {
+            image_detail_view.details = Some(details);
+        }
+    }
+
+    /// Scroll up in image detail view
+    pub fn scroll_image_detail_view_up(&mut self, amount: usize) {
+        if let Some(image_detail_view) = &mut self.image_detail_view {
+            image_detail_view.scroll_offset =
+                image_detail_view.scroll_offset.saturating_sub(amount);
+        }
+    }
+
+    /// Scroll down in image detail view
+    pub fn scroll_image_detail_view_down(&mut self, amount: usize) {
+        if let Some(image_detail_view) = &mut self.image_detail_view {
+            image_detail_view.scroll_offset += amount;
         }
     }
 }

@@ -25,12 +25,16 @@ impl DockerClient {
     pub async fn fetch_logs(&self, id: &str, tail: usize) -> Result<Vec<LogEntry>> {
         debug!("Fetching last {} log lines for container {}", tail, id);
 
-        // Build options - disable timestamps to get simpler output
-        let tail_str = if tail == 0 { "all".to_string() } else { tail.to_string() };
+        // Build options - enable timestamps for time filtering
+        let tail_str = if tail == 0 {
+            "all".to_string()
+        } else {
+            tail.to_string()
+        };
         let options = LogsOptions::<String> {
             stdout: true,
             stderr: true,
-            timestamps: false,  // Disable timestamps for simpler parsing
+            timestamps: true, // Enable timestamps for time filtering
             follow: false,
             tail: tail_str,
             ..Default::default()
@@ -49,7 +53,7 @@ impl DockerClient {
                             debug!("Parsed log entry: {:?}", entry);
                             entries.push(entry);
                             if entries.len() >= tail {
-                                break;  // Got enough entries
+                                break; // Got enough entries
                             }
                         }
                         Err(e) => {
@@ -63,11 +67,14 @@ impl DockerClient {
                 }
                 Ok(None) => {
                     debug!("Log stream ended");
-                    break;  // Stream ended
+                    break; // Stream ended
                 }
                 Err(_) => {
-                    debug!("Timeout waiting for next log entry, returning {} entries", entries.len());
-                    break;  // Timeout on individual item
+                    debug!(
+                        "Timeout waiting for next log entry, returning {} entries",
+                        entries.len()
+                    );
+                    break; // Timeout on individual item
                 }
             }
         }
@@ -98,7 +105,12 @@ impl DockerClient {
 
         stream.map(|result| {
             result
-                .map_err(|e| DockMonError::Docker(DockerError::Container(format!("Failed to read logs: {}", e))))
+                .map_err(|e| {
+                    DockMonError::Docker(DockerError::Container(format!(
+                        "Failed to read logs: {}",
+                        e
+                    )))
+                })
                 .and_then(|log| Self::parse_log_entry(log))
         })
     }
@@ -120,16 +132,18 @@ impl DockerClient {
                 String::from_utf8_lossy(&message).to_string()
             }
             _ => {
-                return Err(DockMonError::Docker(DockerError::Container("Unknown log output type".to_string())));
+                return Err(DockMonError::Docker(DockerError::Container(
+                    "Unknown log output type".to_string(),
+                )));
             }
         };
-        
+
         // Try to detect stderr by content (ERROR, CRITICAL, etc.)
         let is_stderr = raw_message.contains(" ERROR:") || raw_message.contains(" CRITICAL:");
 
         // Trim the message to remove trailing newlines
         let message = raw_message.trim_end().to_string();
-        
+
         debug!("Parsing log message: '{}' (len={})", message, message.len());
 
         // Parse timestamp from message (format: "2024-01-28T10:30:00.123456789Z message")
@@ -137,7 +151,7 @@ impl DockerClient {
         // When timestamps=false, we just use the current time
         let (timestamp, message) = if message.len() > 20 {
             // Look for RFC3339 timestamp pattern: YYYY-MM-DDTHH:MM:SS
-            if message.chars().nth(4) == Some('-') 
+            if message.chars().nth(4) == Some('-')
                 && message.chars().nth(7) == Some('-')
                 && message.chars().nth(10) == Some('T')
                 && message.chars().nth(13) == Some(':')
@@ -178,11 +192,14 @@ mod tests {
     #[ignore = "requires Docker daemon"]
     async fn test_fetch_logs() {
         let client = DockerClient::from_env().await.unwrap();
-        
+
         // List containers and try to get logs from the first one
         let containers = client.list_containers(true).await.unwrap();
         if let Some(container) = containers.first() {
-            println!("Fetching logs for container: {} ({})", container.short_id, container.id);
+            println!(
+                "Fetching logs for container: {} ({})",
+                container.short_id, container.id
+            );
             let logs = client.fetch_logs(&container.id, 10).await;
             println!("Result: {:?}", logs);
             assert!(logs.is_ok());
@@ -201,18 +218,21 @@ mod tests {
     async fn test_fetch_logs_test_logger() {
         use bollard::container::LogsOptions;
         use futures::StreamExt;
-        
+
         let client = DockerClient::from_env().await.unwrap();
-        
+
         // Try to find test-logger container
         let containers = client.list_containers(true).await.unwrap();
-        let test_logger = containers.iter().find(|c| {
-            c.names.iter().any(|n| n.contains("test-logger"))
-        });
-        
+        let test_logger = containers
+            .iter()
+            .find(|c| c.names.iter().any(|n| n.contains("test-logger")));
+
         if let Some(container) = test_logger {
-            println!("Found test-logger: {} ({})", container.short_id, container.id);
-            
+            println!(
+                "Found test-logger: {} ({})",
+                container.short_id, container.id
+            );
+
             // Direct bollard call
             let options = LogsOptions::<String> {
                 stdout: true,
@@ -222,10 +242,10 @@ mod tests {
                 tail: "10".to_string(),
                 ..Default::default()
             };
-            
+
             println!("Calling logs API with options: {:?}", options);
             let mut stream = client.inner().logs(&container.id, Some(options));
-            
+
             let mut count = 0;
             while let Some(result) = stream.next().await {
                 count += 1;
@@ -239,7 +259,7 @@ mod tests {
                 }
             }
             println!("Total log items received: {}", count);
-            
+
             // Now try our wrapper
             let logs = client.fetch_logs(&container.id, 10).await;
             println!("fetch_logs result: {:?}", logs);

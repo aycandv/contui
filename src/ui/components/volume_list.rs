@@ -52,9 +52,7 @@ impl VolumeListWidget {
 
     /// Get the selected volume
     pub fn selected_volume(&self) -> Option<&VolumeSummary> {
-        self.state
-            .selected()
-            .and_then(|idx| self.volumes.get(idx))
+        self.state.selected().and_then(|idx| self.volumes.get(idx))
     }
 
     /// Move selection down

@@ -2,4 +2,7 @@
 
 pub mod app_state;
 
-pub use app_state::{AppState, LogLevelFilter, LogViewState, Notification, Panel};
+pub use app_state::{
+    AppState, DetailViewState, ImageDetailViewState, LogLevelFilter, LogViewState, Notification,
+    Panel, StatsViewState,
+};

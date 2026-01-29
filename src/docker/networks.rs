@@ -84,7 +84,8 @@ impl From<bollard::models::Network> for NetworkSummary {
             name: n.name.clone().unwrap_or_default(),
             driver: n.driver.clone().unwrap_or_else(|| "bridge".to_string()),
             scope,
-            created: n.created
+            created: n
+                .created
                 .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
                 .map(|dt| dt.with_timezone(&chrono::Utc))
                 .unwrap_or_else(chrono::Utc::now),

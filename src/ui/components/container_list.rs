@@ -22,19 +22,16 @@ impl ContainerListWidget {
         if !containers.is_empty() {
             state.select(Some(0));
         }
-        Self {
-            containers,
-            state,
-        }
+        Self { containers, state }
     }
 
     /// Update the container list
     pub fn update_containers(&mut self, containers: Vec<ContainerSummary>) {
         // Preserve selection if possible
         let selected_id = self.selected_container_id();
-        
+
         self.containers = containers;
-        
+
         // Try to restore selection
         if let Some(id) = selected_id {
             if let Some(idx) = self.containers.iter().position(|c| c.id == id) {
@@ -137,7 +134,9 @@ impl ContainerListWidget {
                 let status_style = match c.state {
                     ContainerState::Running => Style::default().fg(Color::Green),
                     ContainerState::Paused => Style::default().fg(Color::Yellow),
-                    ContainerState::Exited | ContainerState::Dead => Style::default().fg(Color::Red),
+                    ContainerState::Exited | ContainerState::Dead => {
+                        Style::default().fg(Color::Red)
+                    }
                     _ => Style::default().fg(Color::Gray),
                 };
 
@@ -151,13 +150,16 @@ impl ContainerListWidget {
             })
             .collect();
 
-        Table::new(rows, [
-            Constraint::Length(12), // ID
-            Constraint::Min(10),    // Name
-            Constraint::Min(15),    // Image
-            Constraint::Length(20), // Status
-            Constraint::Min(15),    // Ports
-        ])
+        Table::new(
+            rows,
+            [
+                Constraint::Length(12), // ID
+                Constraint::Min(10),    // Name
+                Constraint::Min(15),    // Image
+                Constraint::Length(20), // Status
+                Constraint::Min(15),    // Ports
+            ],
+        )
         .header(header)
         .block(
             Block::default()
@@ -176,7 +178,7 @@ impl ContainerListWidget {
     pub fn state(&mut self) -> &mut TableState {
         &mut self.state
     }
-    
+
     /// Set the selected index
     pub fn set_selected(&mut self, index: Option<usize>) {
         self.state.select(index);
@@ -214,10 +216,13 @@ mod tests {
     fn test_container_list_creation() {
         let containers = create_test_containers();
         let widget = ContainerListWidget::new(containers);
-        
+
         assert_eq!(widget.len(), 2);
         assert!(!widget.is_empty());
-        assert_eq!(widget.selected_container_id(), Some("abc123def456".to_string()));
+        assert_eq!(
+            widget.selected_container_id(),
+            Some("abc123def456".to_string())
+        );
     }
 
     #[test]
@@ -231,37 +236,55 @@ mod tests {
     fn test_navigation() {
         let containers = create_test_containers();
         let mut widget = ContainerListWidget::new(containers);
-        
+
         // First item selected
-        assert_eq!(widget.selected_container_id(), Some("abc123def456".to_string()));
-        
+        assert_eq!(
+            widget.selected_container_id(),
+            Some("abc123def456".to_string())
+        );
+
         // Next
         widget.next();
-        assert_eq!(widget.selected_container_id(), Some("def789ghi012".to_string()));
-        
+        assert_eq!(
+            widget.selected_container_id(),
+            Some("def789ghi012".to_string())
+        );
+
         // Wrap around
         widget.next();
-        assert_eq!(widget.selected_container_id(), Some("abc123def456".to_string()));
-        
+        assert_eq!(
+            widget.selected_container_id(),
+            Some("abc123def456".to_string())
+        );
+
         // Previous
         widget.previous();
-        assert_eq!(widget.selected_container_id(), Some("def789ghi012".to_string()));
+        assert_eq!(
+            widget.selected_container_id(),
+            Some("def789ghi012".to_string())
+        );
     }
 
     #[test]
     fn test_update_preserves_selection() {
         let containers = create_test_containers();
         let mut widget = ContainerListWidget::new(containers);
-        
+
         // Select second item
         widget.next();
-        assert_eq!(widget.selected_container_id(), Some("def789ghi012".to_string()));
-        
+        assert_eq!(
+            widget.selected_container_id(),
+            Some("def789ghi012".to_string())
+        );
+
         // Update with same containers
         let new_containers = create_test_containers();
         widget.update_containers(new_containers);
-        
+
         // Should still be on second item
-        assert_eq!(widget.selected_container_id(), Some("def789ghi012".to_string()));
+        assert_eq!(
+            widget.selected_container_id(),
+            Some("def789ghi012".to_string())
+        );
     }
 }

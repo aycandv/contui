@@ -16,7 +16,7 @@ async fn test_container_lifecycle() {
     // 2. Create a container
     // 3. Test operations
     // 4. Clean up
-    // 
+    //
     // For now, we just verify the methods exist and can be called
     // without panicking (they may fail if container doesn't exist)
 }

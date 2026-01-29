@@ -54,9 +54,7 @@ impl ImageListWidget {
 
     /// Get the selected image
     pub fn selected_image(&self) -> Option<&ImageSummary> {
-        self.state
-            .selected()
-            .and_then(|idx| self.images.get(idx))
+        self.state.selected().and_then(|idx| self.images.get(idx))
     }
 
     /// Move selection down

@@ -161,11 +161,7 @@ impl ConfirmDialog {
         }
     }
 
-    pub fn with_labels(
-        mut self,
-        confirm: impl Into<String>,
-        cancel: impl Into<String>,
-    ) -> Self {
+    pub fn with_labels(mut self, confirm: impl Into<String>, cancel: impl Into<String>) -> Self {
         self.confirm_label = confirm.into();
         self.cancel_label = cancel.into();
         self
@@ -221,9 +217,8 @@ mod tests {
 
     #[test]
     fn test_confirm_dialog_builder() {
-        let dialog = ConfirmDialog::new("Title", "Message")
-            .with_labels("Yes", "No");
-        
+        let dialog = ConfirmDialog::new("Title", "Message").with_labels("Yes", "No");
+
         assert_eq!(dialog.title, "Title");
         assert_eq!(dialog.confirm_label, "Yes");
         assert_eq!(dialog.cancel_label, "No");

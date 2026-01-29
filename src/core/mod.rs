@@ -7,9 +7,11 @@ pub mod errors;
 pub mod types;
 
 pub use errors::*;
-pub use types::{Tab, Panel, Modal, ConfirmDialog, InputDialog, HelpContent, HelpSection, 
-                NotificationLevel, SortDirection, FilterOp, new_operation_id,
-                ContainerId, ImageId, VolumeName, NetworkId, OperationId};
+pub use types::{
+    new_operation_id, ConfirmDialog, ContainerId, FilterOp, HelpContent, HelpSection, ImageId,
+    InputDialog, Modal, NetworkId, NotificationLevel, OperationId, Panel, SortDirection, Tab,
+    VolumeName,
+};
 
 /// Docker connection information
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -229,12 +231,16 @@ pub enum UiAction {
     RemoveContainer(String),
     /// Show logs for a container
     ShowContainerLogs(String),
+    /// Show stats for a container
+    ShowContainerStats(String),
+    /// Show details for a container
+    ShowContainerDetails(String),
+    /// Show details for an image
+    ShowImageDetails(String),
     /// Remove an image
     RemoveImage(String),
     /// Prune dangling images
     PruneImages,
-    /// Inspect an image
-    InspectImage(String),
     /// Remove a volume
     RemoveVolume(String),
     /// Prune unused volumes
@@ -243,6 +249,10 @@ pub enum UiAction {
     RemoveNetwork(String),
     /// Prune unused networks
     PruneNetworks,
+    /// Export logs to file
+    ExportLogs,
+    /// Clear terminal screen (to prevent ghost text)
+    Clear,
 }
 
 /// Confirmation dialog action

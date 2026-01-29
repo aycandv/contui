@@ -1,8 +1,8 @@
 //! Container operations
 
 use bollard::container::{
-    KillContainerOptions, ListContainersOptions, RemoveContainerOptions,
-    RestartContainerOptions, StopContainerOptions,
+    KillContainerOptions, ListContainersOptions, RemoveContainerOptions, RestartContainerOptions,
+    StopContainerOptions,
 };
 use tracing::{debug, info, warn};
 
@@ -27,7 +27,10 @@ impl DockerClient {
 
         info!("Found {} containers", containers.len());
 
-        Ok(containers.into_iter().map(|c: bollard::models::ContainerSummary| c.into()).collect())
+        Ok(containers
+            .into_iter()
+            .map(|c: bollard::models::ContainerSummary| c.into())
+            .collect())
     }
 
     /// Start a container
@@ -37,7 +40,9 @@ impl DockerClient {
         self.inner()
             .start_container::<String>(id, None)
             .await
-            .map_err(|e: bollard::errors::Error| DockerError::Container(format!("Failed to start {}: {}", id, e)))?;
+            .map_err(|e: bollard::errors::Error| {
+                DockerError::Container(format!("Failed to start {}: {}", id, e))
+            })?;
 
         info!("Container {} started successfully", id);
         Ok(())
@@ -53,7 +58,9 @@ impl DockerClient {
         self.inner()
             .stop_container(id, Some(options))
             .await
-            .map_err(|e: bollard::errors::Error| DockerError::Container(format!("Failed to stop {}: {}", id, e)))?;
+            .map_err(|e: bollard::errors::Error| {
+                DockerError::Container(format!("Failed to stop {}: {}", id, e))
+            })?;
 
         info!("Container {} stopped successfully", id);
         Ok(())
@@ -69,7 +76,9 @@ impl DockerClient {
         self.inner()
             .restart_container(id, Some(options))
             .await
-            .map_err(|e: bollard::errors::Error| DockerError::Container(format!("Failed to restart {}: {}", id, e)))?;
+            .map_err(|e: bollard::errors::Error| {
+                DockerError::Container(format!("Failed to restart {}: {}", id, e))
+            })?;
 
         info!("Container {} restarted successfully", id);
         Ok(())
@@ -82,7 +91,9 @@ impl DockerClient {
         self.inner()
             .pause_container(id)
             .await
-            .map_err(|e: bollard::errors::Error| DockerError::Container(format!("Failed to pause {}: {}", id, e)))?;
+            .map_err(|e: bollard::errors::Error| {
+                DockerError::Container(format!("Failed to pause {}: {}", id, e))
+            })?;
 
         info!("Container {} paused successfully", id);
         Ok(())
@@ -95,7 +106,9 @@ impl DockerClient {
         self.inner()
             .unpause_container(id)
             .await
-            .map_err(|e: bollard::errors::Error| DockerError::Container(format!("Failed to unpause {}: {}", id, e)))?;
+            .map_err(|e: bollard::errors::Error| {
+                DockerError::Container(format!("Failed to unpause {}: {}", id, e))
+            })?;
 
         info!("Container {} unpaused successfully", id);
         Ok(())
@@ -111,7 +124,9 @@ impl DockerClient {
         self.inner()
             .kill_container(id, Some(options))
             .await
-            .map_err(|e: bollard::errors::Error| DockerError::Container(format!("Failed to kill {}: {}", id, e)))?;
+            .map_err(|e: bollard::errors::Error| {
+                DockerError::Container(format!("Failed to kill {}: {}", id, e))
+            })?;
 
         info!("Container {} killed successfully", id);
         Ok(())
@@ -138,7 +153,9 @@ impl DockerClient {
         self.inner()
             .remove_container(id, Some(options))
             .await
-            .map_err(|e: bollard::errors::Error| DockerError::Container(format!("Failed to remove {}: {}", id, e)))?;
+            .map_err(|e: bollard::errors::Error| {
+                DockerError::Container(format!("Failed to remove {}: {}", id, e))
+            })?;
 
         info!("Container {} removed successfully", id);
         Ok(())
@@ -175,7 +192,10 @@ impl From<bollard::models::ContainerSummary> for ContainerSummary {
                     ip: p.ip.map(|s| s.to_string()),
                     private_port: p.private_port as u16,
                     public_port: p.public_port.map(|p| p as u16),
-                    protocol: p.typ.map(|t| format!("{:?}", t)).unwrap_or_else(|| "tcp".to_string()),
+                    protocol: p
+                        .typ
+                        .map(|t| format!("{:?}", t))
+                        .unwrap_or_else(|| "tcp".to_string()),
                 })
             })
             .collect();
@@ -200,7 +220,7 @@ impl From<bollard::models::ContainerSummary> for ContainerSummary {
             labels,
             state,
             status,
-            health: None, // Will be populated by inspect
+            health: None,   // Will be populated by inspect
             mounts: vec![], // Will be populated by inspect
             networks: c
                 .network_settings
@@ -232,9 +252,18 @@ mod tests {
 
     #[test]
     fn test_parse_container_state() {
-        assert_eq!(parse_container_state(Some("running")), ContainerState::Running);
-        assert_eq!(parse_container_state(Some("exited")), ContainerState::Exited);
-        assert_eq!(parse_container_state(Some("paused")), ContainerState::Paused);
+        assert_eq!(
+            parse_container_state(Some("running")),
+            ContainerState::Running
+        );
+        assert_eq!(
+            parse_container_state(Some("exited")),
+            ContainerState::Exited
+        );
+        assert_eq!(
+            parse_container_state(Some("paused")),
+            ContainerState::Paused
+        );
         assert_eq!(parse_container_state(None), ContainerState::Unknown);
     }
 

@@ -164,9 +164,8 @@ mod tests {
 
     #[test]
     fn test_retryable_errors() {
-        let connection_err = DockMonError::Docker(DockerError::Connection(
-            "connection refused".to_string(),
-        ));
+        let connection_err =
+            DockMonError::Docker(DockerError::Connection("connection refused".to_string()));
         assert!(connection_err.is_retryable());
 
         let not_found_err = DockMonError::Docker(DockerError::NotFound {
@@ -177,9 +176,7 @@ mod tests {
 
     #[test]
     fn test_user_messages() {
-        let conn_err = DockMonError::Docker(DockerError::Connection(
-            "test".to_string(),
-        ));
+        let conn_err = DockMonError::Docker(DockerError::Connection("test".to_string()));
         let msg = conn_err.user_message();
         assert!(msg.contains("Docker"));
     }

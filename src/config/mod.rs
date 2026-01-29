@@ -54,8 +54,7 @@ impl Config {
         let path = path.as_ref();
         info!("Saving configuration to: {}", path.display());
 
-        let contents = toml::to_string_pretty(self)
-            .context("Failed to serialize configuration")?;
+        let contents = toml::to_string_pretty(self).context("Failed to serialize configuration")?;
 
         std::fs::write(path, contents)
             .with_context(|| format!("Failed to write config file: {}", path.display()))?;
@@ -129,10 +128,13 @@ mod tests {
     fn test_config_save_and_load() {
         let config = Config::default();
         let temp_file = NamedTempFile::new().unwrap();
-        
+
         config.save(temp_file.path()).unwrap();
-        
+
         let loaded = Config::load(temp_file.path()).unwrap();
-        assert_eq!(loaded.general.poll_interval_ms, config.general.poll_interval_ms);
+        assert_eq!(
+            loaded.general.poll_interval_ms,
+            config.general.poll_interval_ms
+        );
     }
 }

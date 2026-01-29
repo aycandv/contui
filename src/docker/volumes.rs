@@ -59,7 +59,7 @@ impl DockerClient {
 impl From<bollard::models::Volume> for VolumeSummary {
     fn from(v: bollard::models::Volume) -> Self {
         let name = v.name.clone();
-        
+
         // Parse scope
         let scope = match v.scope {
             Some(bollard::models::VolumeScopeEnum::GLOBAL) => VolumeScope::Global,
@@ -70,7 +70,8 @@ impl From<bollard::models::Volume> for VolumeSummary {
             name: name.clone(),
             driver: v.driver,
             mountpoint: v.mountpoint,
-            created_at: v.created_at
+            created_at: v
+                .created_at
                 .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
                 .map(|dt| dt.with_timezone(&chrono::Utc))
                 .unwrap_or_else(chrono::Utc::now),
