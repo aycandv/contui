@@ -45,8 +45,12 @@ jobs:
       run: |
         NEW_VERSION=${{ steps.semantic.outputs.new_release_version }}
         cargo bump $NEW_VERSION
+        # Update Cargo.lock with the new version
+        cargo check --quiet 2>/dev/null || true
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
-        git add Cargo.toml Cargo.lock
+        git add Cargo.toml
+        # Only add Cargo.lock if it's tracked or exists
+        git add Cargo.lock 2>/dev/null || true
         git commit -m "chore(release): bump version to ${NEW_VERSION} [skip ci]"
         git push
