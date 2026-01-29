@@ -76,7 +76,10 @@ pub fn format_bytes_size(bytes: i64) -> String {
     } else if bytes < 1024 * 1024 * 1024 * 1024 {
         format!("{:.2} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
     } else {
-        format!("{:.2} TB", bytes as f64 / (1024.0 * 1024.0 * 1024.0 * 1024.0))
+        format!(
+            "{:.2} TB",
+            bytes as f64 / (1024.0 * 1024.0 * 1024.0 * 1024.0)
+        )
     }
 }
 
@@ -154,13 +157,18 @@ impl DockerClient {
     pub async fn prune_containers_detailed(&self) -> Result<PruneResult> {
         info!("Calling prune_containers API");
         // Create empty filters to prune all stopped containers
-        let filters: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+        let filters: std::collections::HashMap<String, Vec<String>> =
+            std::collections::HashMap::new();
         let options = bollard::container::PruneContainersOptions { filters };
-        let response = self
-            .inner()
-            .prune_containers(Some(options))
-            .await?;
-        info!("Prune containers response: {:?} deleted", response.containers_deleted.as_ref().map(|v| v.len()).unwrap_or(0));
+        let response = self.inner().prune_containers(Some(options)).await?;
+        info!(
+            "Prune containers response: {:?} deleted",
+            response
+                .containers_deleted
+                .as_ref()
+                .map(|v| v.len())
+                .unwrap_or(0)
+        );
         Ok(PruneResult {
             space_reclaimed: response.space_reclaimed.unwrap_or(0),
             items_deleted: response.containers_deleted.unwrap_or_default(),
@@ -209,13 +217,13 @@ fn parse_disk_usage(response: SystemDataUsageResponse) -> SystemDiskUsage {
                 .as_ref()
                 .map(|u| (u.size, u.ref_count))
                 .unwrap_or((-1, -1));
-            
+
             // Only count size if it's available (not -1)
             if size >= 0 {
                 usage.volumes.total += size;
             }
             usage.volumes.count += 1;
-            
+
             // Volumes not used by any container (ref_count == 0) are reclaimable
             // Only mark as reclaimable if we know the size
             if ref_count == 0 && size >= 0 {

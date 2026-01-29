@@ -45,9 +45,10 @@ impl DockerClient {
         info!("Pruning unused volumes");
 
         // Use empty filters to prune all unused volumes
-        let filters: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+        let filters: std::collections::HashMap<String, Vec<String>> =
+            std::collections::HashMap::new();
         let options = bollard::volume::PruneVolumesOptions { filters };
-        
+
         let result = self
             .inner()
             .prune_volumes(Some(options))
@@ -55,18 +56,28 @@ impl DockerClient {
             .map_err(|e| DockerError::Volume(format!("Failed to prune volumes: {}", e)))?;
 
         let reclaimed = result.space_reclaimed.unwrap_or(0) as u64;
-        let deleted_count = result.volumes_deleted.as_ref().map(|v| v.len()).unwrap_or(0);
-        
+        let deleted_count = result
+            .volumes_deleted
+            .as_ref()
+            .map(|v| v.len())
+            .unwrap_or(0);
+
         if deleted_count > 0 {
-            info!("Pruned {} volumes, reclaimed {} bytes", deleted_count, reclaimed);
+            info!(
+                "Pruned {} volumes, reclaimed {} bytes",
+                deleted_count, reclaimed
+            );
             for vol in result.volumes_deleted.unwrap_or_default() {
                 info!("  Deleted volume: {}", vol);
             }
         } else {
-            info!("No volumes were pruned by Docker API (reclaimed: {} bytes)", reclaimed);
+            info!(
+                "No volumes were pruned by Docker API (reclaimed: {} bytes)",
+                reclaimed
+            );
             info!("This usually means volumes are still referenced by stopped containers");
         }
-        
+
         Ok(reclaimed)
     }
 }

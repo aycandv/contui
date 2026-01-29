@@ -508,7 +508,7 @@ impl UiApp {
                 let has_selection = self.state.prune_dialog.as_ref().map_or(false, |d| {
                     d.containers || d.images || d.volumes || d.networks
                 });
-                
+
                 if has_selection {
                     // Confirm and execute prune - dialog will be closed after getting options
                     UiAction::PruneSystem
@@ -1002,11 +1002,11 @@ impl UiApp {
             .direction(Direction::Vertical)
             .margin(2)
             .constraints([
-                Constraint::Length(1),  // Title
-                Constraint::Length(1),  // Spacer
-                Constraint::Length(5),  // Options (5 items)
-                Constraint::Length(1),  // Spacer
-                Constraint::Length(1),  // Buttons hint
+                Constraint::Length(1), // Title
+                Constraint::Length(1), // Spacer
+                Constraint::Length(5), // Options (5 items)
+                Constraint::Length(1), // Spacer
+                Constraint::Length(1), // Buttons hint
             ])
             .split(popup_area);
 
@@ -1060,9 +1060,17 @@ impl UiApp {
         // Buttons hint
         let hint = Line::from(vec![
             Span::styled("[", Style::default().fg(Color::Gray)),
-            Span::styled("Enter", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "Enter",
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("]Confirm [", Style::default().fg(Color::Gray)),
-            Span::styled("Esc", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "Esc",
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            ),
             Span::styled("]Cancel", Style::default().fg(Color::Gray)),
         ]);
         let hint_para = Paragraph::new(hint).alignment(ratatui::layout::Alignment::Center);
@@ -1389,8 +1397,9 @@ impl UiApp {
     /// Render the System tab with disk usage
     fn render_system_tab(&self, frame: &mut Frame, area: Rect) {
         if !self.state.docker_connected {
-            let text = Paragraph::new("Not connected to Docker\n\nPlease check your Docker daemon.")
-                .wrap(Wrap { trim: true });
+            let text =
+                Paragraph::new("Not connected to Docker\n\nPlease check your Docker daemon.")
+                    .wrap(Wrap { trim: true });
             frame.render_widget(text, area);
             return;
         }
@@ -1417,55 +1426,82 @@ impl UiApp {
             ]),
             Line::from(vec![
                 Span::styled("OS/Arch:          ", Style::default().fg(Color::Cyan)),
-                Span::raw(format!("{}/{}", self.state.connection_info.os, self.state.connection_info.arch)),
+                Span::raw(format!(
+                    "{}/{}",
+                    self.state.connection_info.os, self.state.connection_info.arch
+                )),
             ]),
         ];
-        let info_para = Paragraph::new(info_lines)
-            .block(Block::default().title(" System Information ").borders(Borders::ALL));
+        let info_para = Paragraph::new(info_lines).block(
+            Block::default()
+                .title(" System Information ")
+                .borders(Borders::ALL),
+        );
         frame.render_widget(info_para, layout[0]);
 
         // Disk usage section
         let disk_usage_lines = if let Some(usage) = &self.state.disk_usage {
             let total_reclaimable = usage.total_reclaimable();
             let reclaimable_pct = usage.reclaimable_percentage();
-            
+
             vec![
                 Line::from(vec![
                     Span::styled("Images:           ", Style::default().fg(Color::Cyan)),
-                    Span::raw(format!("{}  (Reclaimable: {})", 
+                    Span::raw(format!(
+                        "{}  (Reclaimable: {})",
                         format_bytes_size(usage.images.total),
-                        format_bytes_size(usage.images.reclaimable))),
+                        format_bytes_size(usage.images.reclaimable)
+                    )),
                 ]),
                 Line::from(vec![
                     Span::styled("Containers:       ", Style::default().fg(Color::Cyan)),
-                    Span::raw(format!("{}  (Reclaimable: {})", 
+                    Span::raw(format!(
+                        "{}  (Reclaimable: {})",
                         format_bytes_size(usage.containers.total),
-                        format_bytes_size(usage.containers.reclaimable))),
+                        format_bytes_size(usage.containers.reclaimable)
+                    )),
                 ]),
                 Line::from(vec![
                     Span::styled("Local Volumes:    ", Style::default().fg(Color::Cyan)),
-                    Span::raw(format!("{}  (Reclaimable: {})", 
+                    Span::raw(format!(
+                        "{}  (Reclaimable: {})",
                         format_bytes_size(usage.volumes.total),
-                        format_bytes_size(usage.volumes.reclaimable))),
+                        format_bytes_size(usage.volumes.reclaimable)
+                    )),
                 ]),
                 Line::from(vec![
                     Span::styled("Build Cache:      ", Style::default().fg(Color::Cyan)),
-                    Span::raw(format!("{}  (Reclaimable: {})", 
+                    Span::raw(format!(
+                        "{}  (Reclaimable: {})",
                         format_bytes_size(usage.build_cache.total),
-                        format_bytes_size(usage.build_cache.reclaimable))),
+                        format_bytes_size(usage.build_cache.reclaimable)
+                    )),
                 ]),
                 Line::from("─".repeat(50)),
                 Line::from(vec![
-                    Span::styled("Total:            ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
-                    Span::styled(format_bytes_size(usage.total_size()), 
-                        Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        "Total:            ",
+                        Style::default()
+                            .fg(Color::Green)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        format_bytes_size(usage.total_size()),
+                        Style::default()
+                            .fg(Color::Green)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                 ]),
                 Line::from(vec![
                     Span::styled("Total Reclaimable:", Style::default().fg(Color::Yellow)),
-                    Span::styled(format!(" {}  [{:.0}% can be freed]", 
-                        format_bytes_size(total_reclaimable),
-                        reclaimable_pct),
-                        Style::default().fg(Color::Yellow)),
+                    Span::styled(
+                        format!(
+                            " {}  [{:.0}% can be freed]",
+                            format_bytes_size(total_reclaimable),
+                            reclaimable_pct
+                        ),
+                        Style::default().fg(Color::Yellow),
+                    ),
                 ]),
             ]
         } else {

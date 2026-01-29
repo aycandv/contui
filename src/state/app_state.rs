@@ -140,7 +140,7 @@ impl Default for PruneDialogState {
     fn default() -> Self {
         Self {
             containers: false,
-            images: true,  // Default to pruning dangling images
+            images: true, // Default to pruning dangling images
             volumes: false,
             networks: false,
             build_cache: false,
@@ -767,7 +767,8 @@ impl AppState {
                 3 => dialog.networks = !dialog.networks,
                 4 => {
                     // Toggle everything
-                    let all = !(dialog.containers && dialog.images && dialog.volumes && dialog.networks);
+                    let all =
+                        !(dialog.containers && dialog.images && dialog.volumes && dialog.networks);
                     dialog.containers = all;
                     dialog.images = all;
                     dialog.volumes = all;

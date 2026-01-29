@@ -718,12 +718,14 @@ impl App {
         // Get options first, then close dialog
         let options = self.state.get_prune_options();
         self.state.close_prune_dialog();
-        
+
         if let Some(client) = &self.docker_client {
             if let Some(options) = options {
-                info!("Pruning system resources: containers={}, images={}, volumes={}, networks={}", 
-                    options.containers, options.images, options.volumes, options.networks);
-                
+                info!(
+                    "Pruning system resources: containers={}, images={}, volumes={}, networks={}",
+                    options.containers, options.images, options.volumes, options.networks
+                );
+
                 let mut total_reclaimed: i64 = 0;
                 let mut has_error = false;
                 let mut pruned_containers = 0usize;
@@ -811,13 +813,13 @@ impl App {
                 if options.networks && pruned_networks > 0 {
                     details.push(format!("{} networks", pruned_networks));
                 }
-                
+
                 let message = if details.is_empty() {
                     format!("Nothing to prune (reclaimable: {})", size_str)
                 } else {
                     format!("Pruned {} ({})", size_str, details.join(", "))
                 };
-                
+
                 let level = if has_error {
                     NotificationLevel::Warning
                 } else if details.is_empty() {
@@ -825,7 +827,7 @@ impl App {
                 } else {
                     NotificationLevel::Success
                 };
-                
+
                 self.state.add_notification(message, level);
 
                 // Refresh data to show updated disk usage
