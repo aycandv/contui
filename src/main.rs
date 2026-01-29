@@ -1,11 +1,15 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use contui::app::App;
 use contui::config::Config;
 use contui::core::ConnectionInfo;
 use contui::docker::DockerClient;
+use contui::update::{
+    check_for_updates, install_update, is_interactive, prompt_for_update, save_skip_version,
+    UpdateCheckResult, UpdateDecision, UpdateInfo,
+};
 
 /// Contui - Advanced Docker TUI
 #[derive(Parser, Debug)]
@@ -31,6 +35,10 @@ struct Cli {
     /// Log level (error, warn, info, debug, trace)
     #[arg(long, value_name = "LEVEL", default_value = "info", global = true)]
     log_level: String,
+
+    /// Skip automatic update check on startup
+    #[arg(long, global = true)]
+    skip_update_check: bool,
 }
 
 #[derive(Subcommand, Debug)]
@@ -64,7 +72,7 @@ async fn main() -> Result<()> {
     match cli.command {
         Some(Commands::Update { check }) => {
             if check {
-                return check_for_updates().await;
+                return check_for_updates_cli().await;
             } else {
                 return update_self().await;
             }
@@ -90,7 +98,7 @@ fn print_version() {
     println!("Repository: https://github.com/aycandv/contui");
 }
 
-async fn check_for_updates() -> Result<()> {
+async fn check_for_updates_cli() -> Result<()> {
     println!("Checking for updates...");
 
     let current_version = env!("CARGO_PKG_VERSION");
@@ -130,7 +138,7 @@ async fn update_self() -> Result<()> {
         .repo_owner("aycandv")
         .repo_name("contui")
         .bin_name("contui")
-        .target(&target)
+        .target(target)
         .identifier("contui")
         .show_download_progress(true)
         .show_output(false)
@@ -289,6 +297,17 @@ async fn run_tui(cli: Cli) -> Result<()> {
 
     info!("Configuration loaded successfully");
 
+    // Check for updates before launching TUI (unless skipped via CLI)
+    if !cli.skip_update_check {
+        if let Some(should_exit) = handle_update_check(&config).await {
+            if should_exit {
+                return Ok(());
+            }
+        }
+    } else {
+        debug!("Update check skipped via CLI flag");
+    }
+
     // Check Docker connection
     match check_docker_connection(&config).await {
         Ok(info) => {
@@ -329,4 +348,76 @@ async fn check_docker_connection(config: &Config) -> anyhow::Result<ConnectionIn
 
     client.ping().await?;
     Ok(client.connection_info().clone())
+}
+
+/// Handle automatic update check before TUI launch
+///
+/// Returns `Some(true)` if the app should exit (after installing update),
+/// `Some(false)` if the app should continue (user declined or error),
+/// or `None` if the check was skipped entirely.
+async fn handle_update_check(config: &Config) -> Option<bool> {
+    let result = check_for_updates(&config.update).await;
+
+    match result {
+        UpdateCheckResult::UpdateAvailable {
+            current,
+            latest,
+            release_url,
+        } => {
+            info!("Update available: {} -> {}", current, latest);
+
+            // Only prompt if configured and in interactive mode
+            if !config.update.prompt_to_install || !is_interactive() {
+                // Just log, don't prompt
+                debug!("Update prompt disabled or non-interactive mode");
+                return Some(false);
+            }
+
+            let info = UpdateInfo {
+                current_version: current,
+                latest_version: latest.clone(),
+                release_url,
+            };
+
+            match prompt_for_update(&info) {
+                Ok(UpdateDecision::Install) => {
+                    if let Err(e) = install_update() {
+                        eprintln!("\n  ✗ Failed to install update: {}", e);
+                        eprintln!("    You can try manually: contui update\n");
+                        Some(false)
+                    } else {
+                        // Exit after successful update so user restarts with new version
+                        Some(true)
+                    }
+                }
+                Ok(UpdateDecision::Skip) => {
+                    debug!("User chose to skip update");
+                    Some(false)
+                }
+                Ok(UpdateDecision::SkipVersion) => {
+                    debug!("User chose to skip version {}", latest);
+                    if let Err(e) = save_skip_version(&latest) {
+                        warn!("Could not save skip_version to config: {}", e);
+                    }
+                    Some(false)
+                }
+                Err(e) => {
+                    warn!("Failed to read user input: {}", e);
+                    Some(false)
+                }
+            }
+        }
+        UpdateCheckResult::UpToDate => {
+            debug!("Already on latest version");
+            None
+        }
+        UpdateCheckResult::Skipped { reason } => {
+            debug!("Update check skipped: {}", reason);
+            None
+        }
+        UpdateCheckResult::Failed { error } => {
+            debug!("Update check failed (continuing anyway): {}", error);
+            None
+        }
+    }
 }

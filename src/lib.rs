@@ -9,4 +9,5 @@ pub mod docker;
 pub mod registry;
 pub mod state;
 pub mod ui;
+pub mod update;
 pub mod utils;
