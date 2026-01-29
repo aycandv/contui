@@ -2,28 +2,49 @@
 
 ## Status
 - Total Stories: 5
-- Completed: 0
-- Current Story: US-019-1
+- Completed: 5
+- Current Story: All complete!
 
 ## Completed Stories
-None yet - starting fresh
 
-## In Progress
-None - ready to start
+### US-019-1: Add self-update functionality ✅
+- Added 'update' subcommand using clap and self_update crate
+- Checks GitHub releases API for latest version
+- Compares current version with latest using semver
+- Downloads appropriate binary for current platform
+- Replaces current binary atomically
+- Shows progress during download
+- Shows success/failure messages
 
-## Remaining Stories
+### US-019-2: Add update --check flag ✅
+- Added '--check' flag to update command
+- Shows current version and latest version
+- Shows 'Update available' or 'Up to date' message
 
-### US-019-1: Add self-update functionality
-Status: NOT STARTED
+### US-019-3: Add self-uninstall functionality ✅
+- Added 'uninstall' subcommand
+- Shows confirmation prompt before removing
+- Removes the binary from current_exe() path
+- Shows success message with instructions for config cleanup
 
-### US-019-2: Add update --check flag
-Status: NOT STARTED
+### US-019-4: Add uninstall --purge flag ✅
+- Added '--purge' flag to uninstall command
+- Removes configuration directory (~/.config/contui)
+- Shows what files were removed
 
-### US-019-3: Add self-uninstall functionality
-Status: NOT STARTED
+### US-019-5: Enhance version command ✅
+- Added 'version' subcommand (in addition to --version)
+- Shows current version, platform, and repository URL
+- Updated help text with new commands
 
-### US-019-4: Add uninstall --purge flag
-Status: NOT STARTED
+## Summary
+All user stories for US-019 completed successfully!
 
-### US-019-5: Enhance version command
-Status: NOT STARTED
+## New Commands
+```bash
+contui update          # Self-update to latest version
+contui update --check  # Check for updates
+contui uninstall       # Uninstall contui
+contui uninstall --purge  # Uninstall + remove config
+contui version         # Show detailed version info
+```
