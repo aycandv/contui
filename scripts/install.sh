@@ -274,7 +274,7 @@ main() {
     printf "    ${CYAN}\$ contui${NC}              Launch TUI\n"
     printf "    ${CYAN}\$ contui --help${NC}       Show help\n"
     echo ""
-    printf "  📚 Docs: \033]8;;https://github.com/${REPO}\033\\${CYAN}github.com/${REPO}${NC}\033]8;;\033\\\n"
+    printf "  📚 Docs: %bhttps://github.com/%s%b\n" "$CYAN" "$REPO" "$NC"
     echo ""
 
     # PATH warning if needed
