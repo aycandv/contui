@@ -416,7 +416,7 @@ async fn handle_update_check(config: &Config) -> Option<bool> {
             None
         }
         UpdateCheckResult::Failed { error } => {
-            debug!("Update check failed (continuing anyway): {}", error);
+            warn!("Update check failed (continuing anyway): {}", error);
             None
         }
     }

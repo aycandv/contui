@@ -142,7 +142,7 @@ pub async fn check_for_updates(config: &UpdateConfig) -> UpdateCheckResult {
     let mut state = match UpdateState::load() {
         Ok(s) => s,
         Err(e) => {
-            debug!("Could not load update state: {}", e);
+            warn!("Could not load update state (using defaults): {}", e);
             UpdateState::default()
         }
     };
@@ -172,7 +172,7 @@ pub async fn check_for_updates(config: &UpdateConfig) -> UpdateCheckResult {
             // Update state regardless of result
             state.mark_checked();
             if let Err(e) = state.save() {
-                debug!("Could not save update state: {}", e);
+                warn!("Could not save update state: {}", e);
             }
 
             // Check if this version should be skipped
@@ -220,9 +220,8 @@ pub async fn check_for_updates(config: &UpdateConfig) -> UpdateCheckResult {
 
 /// Fetch the latest version from GitHub releases
 async fn fetch_latest_version() -> Result<String> {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(10))
-        .build()?;
+    // Note: Timeout is handled by the caller via tokio::time::timeout
+    let client = reqwest::Client::new();
 
     let response = client
         .get("https://api.github.com/repos/aycandv/contui/releases/latest")
@@ -352,8 +351,16 @@ pub fn save_skip_version(version: &str) -> Result<()> {
     };
 
     // Load existing config or create default
+    // Important: Do NOT fall back to default if config exists but fails to load,
+    // as that would overwrite the user's config with defaults
     let mut config = if config_path.exists() {
-        Config::load(&config_path).unwrap_or_default()
+        Config::load(&config_path).with_context(|| {
+            format!(
+                "Could not load existing config at {}. \
+                 Please fix the config file or remove it to start fresh.",
+                config_path.display()
+            )
+        })?
     } else {
         Config::default()
     };
