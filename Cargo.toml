@@ -63,6 +63,10 @@ clap = { version = "4.5", features = ["derive"] }
 self_update = { version = "0.42", default-features = false, features = ["archive-tar", "archive-zip", "compression-flate2", "compression-zip-deflate", "rustls"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
+# Terminal animations for update/install flows
+indicatif = "0.17"
+console = "0.15"
+
 [dev-dependencies]
 # Testing
 mockall = "0.13"

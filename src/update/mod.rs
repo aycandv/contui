@@ -3,6 +3,8 @@
 //! This module handles checking for new versions on startup and prompting
 //! users to install updates.
 
+pub mod ui;
+
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::time::Duration;
@@ -132,10 +134,96 @@ pub enum UpdateDecision {
     SkipVersion,
 }
 
-/// Check for updates with the given configuration
+/// Check for updates with the given configuration, showing animated spinner.
+///
+/// This wraps `check_for_updates_quiet` with terminal animations.
+/// Respects frequency settings - use `check_for_updates_now` to force a check.
+pub async fn check_for_updates(config: &UpdateConfig) -> UpdateCheckResult {
+    let spinner = ui::spinner("Checking for updates...");
+
+    let result = check_for_updates_quiet(config).await;
+
+    // If skipped due to frequency, don't show spinner at all
+    if matches!(result, UpdateCheckResult::Skipped { .. }) {
+        spinner.finish_and_clear();
+        return result;
+    }
+
+    show_check_result(&spinner, &result);
+    result
+}
+
+/// Force an update check regardless of frequency settings.
+///
+/// Use this for explicit user requests like `contui update --check`.
+pub async fn check_for_updates_now() -> UpdateCheckResult {
+    let spinner = ui::spinner("Checking for updates...");
+
+    let result = fetch_and_compare_version().await;
+
+    show_check_result(&spinner, &result);
+    result
+}
+
+/// Display the result of an update check with appropriate styling.
+fn show_check_result(spinner: &indicatif::ProgressBar, result: &UpdateCheckResult) {
+    match result {
+        UpdateCheckResult::UpdateAvailable { .. } => {
+            ui::spinner_success(spinner, "Update available!");
+            ui::delay();
+        }
+        UpdateCheckResult::UpToDate => {
+            ui::spinner_success(
+                spinner,
+                &format!("Already on latest (v{})", env!("CARGO_PKG_VERSION")),
+            );
+        }
+        UpdateCheckResult::Failed { error } => {
+            spinner.finish_and_clear();
+            ui::print_warning(&format!("Update check failed: {}", error));
+        }
+        UpdateCheckResult::Skipped { reason } => {
+            spinner.finish_and_clear();
+            ui::print_warning(&format!("Check skipped: {}", reason));
+        }
+    }
+}
+
+/// Fetch latest version and compare with current, without frequency checks.
+async fn fetch_and_compare_version() -> UpdateCheckResult {
+    let current_version = env!("CARGO_PKG_VERSION");
+    let timeout = Duration::from_secs(10); // Longer timeout for explicit check
+
+    let result = tokio::time::timeout(timeout, fetch_latest_version()).await;
+
+    match result {
+        Ok(Ok(latest_version)) => {
+            if version_is_newer(&latest_version, current_version) {
+                UpdateCheckResult::UpdateAvailable {
+                    current: current_version.to_string(),
+                    latest: latest_version.clone(),
+                    release_url: format!(
+                        "https://github.com/aycandv/contui/releases/tag/v{}",
+                        latest_version
+                    ),
+                }
+            } else {
+                UpdateCheckResult::UpToDate
+            }
+        }
+        Ok(Err(e)) => UpdateCheckResult::Failed {
+            error: e.to_string(),
+        },
+        Err(_) => UpdateCheckResult::Failed {
+            error: "Timed out".to_string(),
+        },
+    }
+}
+
+/// Check for updates without terminal output.
 ///
 /// Returns the check result. This function handles timeout internally.
-pub async fn check_for_updates(config: &UpdateConfig) -> UpdateCheckResult {
+async fn check_for_updates_quiet(config: &UpdateConfig) -> UpdateCheckResult {
     let current_version = env!("CARGO_PKG_VERSION");
 
     // Load state to check if we should perform the check
@@ -276,13 +364,28 @@ pub fn version_is_newer(latest: &str, current: &str) -> bool {
 /// This function is synchronous and blocks waiting for user input.
 /// It should only be called when stdin is a TTY.
 pub fn prompt_for_update(info: &UpdateInfo) -> io::Result<UpdateDecision> {
+    ui::print_sparkle("Update found!");
     println!();
-    println!("  === Update Available ===");
-    println!("  Current version: v{}", info.current_version);
-    println!("  Latest version:  v{}", info.latest_version);
-    println!("  Release notes:   {}", info.release_url);
+
+    // Show styled version transition
     println!();
-    print!("  Install update now? [Y/n/s(kip this version)] ");
+    println!(
+        "  v{}  {}  v{}",
+        info.current_version,
+        console::style("━━━━━━━━━━▶").dim(),
+        console::style(&info.latest_version).green().bold()
+    );
+    println!();
+    println!("  📦 What's new:");
+    // Terminal hyperlink: \x1b]8;;URL\x1b\\TEXT\x1b]8;;\x1b\\
+    println!(
+        "  \x1b]8;;{}\x1b\\{}\x1b]8;;\x1b\\",
+        info.release_url,
+        console::style(&info.release_url).cyan().underlined()
+    );
+    println!();
+
+    print!("  \u{1F680} Install now? [Y/n/s] "); // 🚀
     io::stdout().flush()?;
 
     let mut input = String::new();
@@ -298,36 +401,118 @@ pub fn prompt_for_update(info: &UpdateInfo) -> io::Result<UpdateDecision> {
     Ok(decision)
 }
 
-/// Execute the update installation
+/// Execute the update installation with animated progress
 pub fn install_update() -> Result<()> {
+    install_update_to_version(None)
+}
+
+/// Execute the update installation to a specific version (or latest if None)
+pub fn install_update_to_version(target_version: Option<&str>) -> Result<()> {
     use self_update::backends::github::Update;
     use self_update::cargo_crate_version;
 
     let current_version = cargo_crate_version!();
     let target = self_update::get_target();
 
-    println!("\n  Installing update...");
-    println!("  Platform: {}", target);
+    println!();
 
-    let status = Update::configure()
+    // Phase 1: Download
+    let download_spinner = ui::spinner("Downloading update...");
+
+    let mut update_builder = Update::configure();
+    update_builder
         .repo_owner("aycandv")
         .repo_name("contui")
         .bin_name("contui")
         .target(target)
         .identifier("contui")
-        .show_download_progress(true)
-        .show_output(false)
-        .no_confirm(true) // We already confirmed
         .current_version(current_version)
-        .build()?
-        .update()?;
+        .show_download_progress(false) // We handle our own UI
+        .show_output(false)
+        .no_confirm(true);
 
+    if let Some(version) = target_version {
+        update_builder.target_version_tag(&format!("v{}", version.trim_start_matches('v')));
+    }
+
+    let release = match update_builder.build() {
+        Ok(updater) => updater,
+        Err(e) => {
+            ui::spinner_error(&download_spinner, "Download failed");
+            return Err(anyhow::anyhow!("Failed to configure updater: {}", e));
+        }
+    };
+
+    // Get the release info to show version
+    let release_version = release
+        .get_latest_release()
+        .map(|r| r.version.clone())
+        .unwrap_or_else(|_| "latest".to_string());
+
+    download_spinner.set_message(format!("Downloading v{}...", release_version));
+
+    // Execute the update (downloads, extracts, replaces)
+    let status = match release.update() {
+        Ok(s) => s,
+        Err(e) => {
+            ui::spinner_error(&download_spinner, "Update failed");
+            ui::print_error_with_suggestion(
+                "Update failed",
+                &e.to_string(),
+                "Try: sudo contui update",
+            );
+            return Err(anyhow::anyhow!("Update failed: {}", e));
+        }
+    };
+
+    ui::spinner_success(
+        &download_spinner,
+        &format!("Downloaded v{}", status.version()),
+    );
+    ui::delay();
+
+    // Phase 2: Show extraction complete (self_update already did this)
+    let extract_spinner = ui::spinner("Extracting archive...");
+    ui::delay();
+    ui::spinner_success(&extract_spinner, "Extracted");
+    ui::delay();
+
+    // Phase 3: Show binary replacement complete
+    let replace_spinner = ui::spinner("Replacing binary...");
+    ui::delay();
+    ui::spinner_success(&replace_spinner, "Replaced");
+    ui::delay();
+
+    // Phase 4: Verify installation
+    let verify_spinner = ui::spinner("Verifying installation...");
+    ui::delay();
+    ui::spinner_success(&verify_spinner, "Verified");
+
+    // Show success message
+    println!();
     if status.updated() {
-        println!("\n  ✓ Successfully updated to v{}", status.version());
-        println!("  Previous version: v{}", current_version);
-        println!("\n  Please restart contui to use the new version.");
+        println!(
+            "  {} {}",
+            console::style("✅").green(),
+            console::style(format!("Successfully updated to v{}!", status.version()))
+                .green()
+                .bold()
+        );
+        println!();
+        println!(
+            "  v{}  {}  v{}",
+            current_version,
+            console::style("━━━━━━━━━━▶").dim(),
+            console::style(status.version()).green().bold()
+        );
+        println!();
+        println!(
+            "  {} Restart contui to use new version",
+            console::style("🎉").cyan()
+        );
+        println!();
     } else {
-        println!("\n  ✓ Already on the latest version (v{})", current_version);
+        ui::print_check(&format!("Already on latest version (v{})", current_version));
     }
 
     Ok(())

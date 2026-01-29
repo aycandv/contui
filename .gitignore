@@ -48,3 +48,6 @@ dist/
 # DockMon specific
 .dockmon/
 config.local.toml
+
+# Git worktrees
+.worktrees/

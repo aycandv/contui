@@ -7,8 +7,8 @@ use contui::config::Config;
 use contui::core::ConnectionInfo;
 use contui::docker::DockerClient;
 use contui::update::{
-    check_for_updates, install_update, is_interactive, prompt_for_update, save_skip_version,
-    UpdateCheckResult, UpdateDecision, UpdateInfo,
+    check_for_updates, check_for_updates_now, install_update, is_interactive, prompt_for_update,
+    save_skip_version, UpdateCheckResult, UpdateDecision, UpdateInfo,
 };
 
 /// Contui - Advanced Docker TUI
@@ -99,23 +99,42 @@ fn print_version() {
 }
 
 async fn check_for_updates_cli() -> Result<()> {
-    println!("Checking for updates...");
+    // Force check regardless of frequency (explicit user request)
+    let result = check_for_updates_now().await;
 
-    let current_version = env!("CARGO_PKG_VERSION");
+    match result {
+        UpdateCheckResult::UpdateAvailable {
+            current,
+            latest,
+            release_url,
+        } => {
+            // Prompt user for action
+            let info = UpdateInfo {
+                current_version: current,
+                latest_version: latest.clone(),
+                release_url,
+            };
 
-    match get_latest_version().await {
-        Ok(latest_version) => {
-            if latest_version == current_version {
-                println!("✓ You're on the latest version (v{})", current_version);
+            if is_interactive() {
+                match prompt_for_update(&info)? {
+                    UpdateDecision::Install => {
+                        install_update()?;
+                    }
+                    UpdateDecision::Skip => {
+                        println!("  Skipping update.");
+                    }
+                    UpdateDecision::SkipVersion => {
+                        save_skip_version(&latest)?;
+                    }
+                }
             } else {
-                println!("Current version: v{}", current_version);
-                println!("Latest version: v{}", latest_version);
-                println!("\nUpdate available! Run 'contui update' to install.");
+                println!("\n  Run 'contui update' to install.");
             }
         }
-        Err(e) => {
-            eprintln!("✗ Failed to check for updates: {}", e);
-            std::process::exit(1);
+        UpdateCheckResult::UpToDate
+        | UpdateCheckResult::Skipped { .. }
+        | UpdateCheckResult::Failed { .. } => {
+            // Animated check already displayed the result
         }
     }
 
@@ -123,38 +142,40 @@ async fn check_for_updates_cli() -> Result<()> {
 }
 
 async fn update_self() -> Result<()> {
-    use self_update::backends::github::Update;
-    use self_update::cargo_crate_version;
+    use contui::update::ui as update_ui;
 
-    println!("Checking for updates...");
+    // First check if update is available with our animated spinner
+    let result = check_for_updates_now().await;
 
-    let current_version = cargo_crate_version!();
+    match result {
+        UpdateCheckResult::UpdateAvailable { latest, .. } => {
+            // Ask user to confirm
+            println!();
+            print!("  Install v{}? [Y/n] ", latest);
+            std::io::Write::flush(&mut std::io::stdout())?;
 
-    // Determine target identifier matching our release asset naming
-    let target = self_update::get_target();
-    println!("Platform: {}", target);
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input)?;
 
-    let status = Update::configure()
-        .repo_owner("aycandv")
-        .repo_name("contui")
-        .bin_name("contui")
-        .target(target)
-        .identifier("contui")
-        .show_download_progress(true)
-        .show_output(false)
-        .no_confirm(false)
-        .current_version(current_version)
-        .build()?
-        .update()?;
-
-    if status.updated() {
-        println!("\n✓ Successfully updated to v{}", status.version());
-        println!("  Previous version: v{}", current_version);
-    } else {
-        println!(
-            "\n✓ You're already on the latest version (v{})",
-            current_version
-        );
+            match input.trim().to_lowercase().as_str() {
+                "" | "y" | "yes" => {
+                    install_update()?;
+                }
+                _ => {
+                    println!("  Update cancelled.");
+                }
+            }
+        }
+        UpdateCheckResult::UpToDate => {
+            // Already printed by check_for_updates_now
+        }
+        UpdateCheckResult::Failed { error } => {
+            update_ui::print_error("Update check failed", Some(&error));
+            std::process::exit(1);
+        }
+        UpdateCheckResult::Skipped { reason } => {
+            update_ui::print_warning(&format!("Skipped: {}", reason));
+        }
     }
 
     Ok(())
@@ -240,27 +261,6 @@ async fn uninstall_self(purge: bool) -> Result<()> {
     }
 
     Ok(())
-}
-
-async fn get_latest_version() -> Result<String> {
-    let client = reqwest::Client::new();
-    let response = client
-        .get("https://api.github.com/repos/aycandv/contui/releases/latest")
-        .header("User-Agent", "contui-update-checker")
-        .send()
-        .await?;
-
-    if !response.status().is_success() {
-        return Err(anyhow::anyhow!("GitHub API returned {}", response.status()));
-    }
-
-    let release: serde_json::Value = response.json().await?;
-    let tag = release["tag_name"]
-        .as_str()
-        .ok_or_else(|| anyhow::anyhow!("Could not parse version from GitHub response"))?;
-
-    // Remove 'v' prefix if present
-    Ok(tag.trim_start_matches('v').to_string())
 }
 
 async fn run_tui(cli: Cli) -> Result<()> {
