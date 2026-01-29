@@ -4,9 +4,12 @@ on:
   push:
     tags:
       - 'v*'
-  release:
-    types: [published]
   workflow_dispatch:
+
+# Only one release build at a time
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -85,8 +88,8 @@ jobs:
         name: contui-${{ matrix.target }}
         path: contui-${{ matrix.target }}.${{ matrix.archive }}
 
-  release:
-    name: Create Release
+  upload-assets:
+    name: Upload Release Assets
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -99,11 +102,9 @@ jobs:
       with:
         path: artifacts
 
-    - name: Create Release
+    - name: Upload assets to release
       uses: softprops/action-gh-release@v1
       with:
         files: artifacts/**/*
-        draft: false
-        prerelease: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

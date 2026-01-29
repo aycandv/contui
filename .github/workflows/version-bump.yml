@@ -1,4 +1,11 @@
-name: Version Bump
+name: Manual Version Bump (Deprecated)
+
+# DEPRECATED: Use conventional commits instead
+# - feat: ... -> minor version bump
+# - fix: ...  -> patch version bump
+# - feat!: or BREAKING CHANGE: -> major version bump
+#
+# This workflow is kept for emergency manual releases only.
 
 on:
   workflow_dispatch:
@@ -22,7 +29,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
       with:
-        token: ${{ secrets.GITHUB_TOKEN }}
+        token: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
 
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
@@ -40,7 +47,7 @@ jobs:
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
         git add Cargo.toml Cargo.lock
-        git commit -m "chore: bump version to ${{ env.VERSION }}"
+        git commit -m "chore: bump version to ${{ env.VERSION }} [skip ci]"
         git push
 
     - name: Create tag
