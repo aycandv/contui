@@ -376,6 +376,9 @@ impl App {
                     );
                 }
             }
+        } else {
+            self.state
+                .add_notification("Docker not connected", NotificationLevel::Error);
         }
     }
 
@@ -398,6 +401,9 @@ impl App {
                     );
                 }
             }
+        } else {
+            self.state
+                .add_notification("Docker not connected", NotificationLevel::Error);
         }
     }
 
@@ -420,6 +426,9 @@ impl App {
                     );
                 }
             }
+        } else {
+            self.state
+                .add_notification("Docker not connected", NotificationLevel::Error);
         }
     }
 
@@ -442,6 +451,9 @@ impl App {
                     );
                 }
             }
+        } else {
+            self.state
+                .add_notification("Docker not connected", NotificationLevel::Error);
         }
     }
 
@@ -464,6 +476,9 @@ impl App {
                     );
                 }
             }
+        } else {
+            self.state
+                .add_notification("Docker not connected", NotificationLevel::Error);
         }
     }
 
@@ -486,6 +501,9 @@ impl App {
                     );
                 }
             }
+        } else {
+            self.state
+                .add_notification("Docker not connected", NotificationLevel::Error);
         }
     }
 
@@ -508,13 +526,66 @@ impl App {
                     );
                 }
             }
+        } else {
+            self.state
+                .add_notification("Docker not connected", NotificationLevel::Error);
         }
     }
 
     /// Refresh all data from Docker
     async fn refresh_data(&mut self) {
+        // If we don't have a client, try to connect
+        if self.docker_client.is_none() {
+            info!("No Docker client, attempting to connect...");
+            match Self::connect_docker(&self.config).await {
+                Ok((client, info)) => {
+                    info!(
+                        "Connected to Docker: {} (API: {})",
+                        info.version, info.api_version
+                    );
+                    self.docker_client = Some(client);
+                    self.state.set_docker_connected(true, info);
+                    self.state
+                        .add_notification("Connected to Docker", NotificationLevel::Success);
+                }
+                Err(e) => {
+                    // Still can't connect, skip refresh
+                    warn!("Connection attempt failed: {}", e);
+                    return;
+                }
+            }
+        }
+
         if let Some(client) = &self.docker_client {
             debug!("Refreshing data from Docker");
+
+            // Check if Docker is still reachable
+            match client.ping().await {
+                Ok(_) => {
+                    // Reconnected after being disconnected
+                    if !self.state.docker_connected {
+                        info!("Docker connection restored");
+                        self.state.docker_connected = true;
+                        self.state.add_notification(
+                            "Docker connection restored",
+                            NotificationLevel::Success,
+                        );
+                    }
+                }
+                Err(e) => {
+                    // Lost connection - clear the client so we try to reconnect next time
+                    if self.state.docker_connected {
+                        warn!("Lost connection to Docker: {}", e);
+                        self.state.docker_connected = false;
+                        self.state.add_notification(
+                            "Lost connection to Docker",
+                            NotificationLevel::Error,
+                        );
+                    }
+                    self.docker_client = None;
+                    return; // Skip data refresh if not connected
+                }
+            }
 
             // Fetch containers
             match client.list_containers(true).await {

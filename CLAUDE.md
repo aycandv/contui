@@ -94,6 +94,8 @@ cargo check && cargo test && cargo fmt --check && cargo clippy
 
 **UiAction Pattern**: UI returns action variants (`StartContainer(id)`, `ShowLogs(id)`) - `App` executes them. UI never calls Docker directly.
 
+**Connection Handling**: `refresh_data()` pings Docker every 2s. On failure, sets `docker_client = None` and `docker_connected = false`. On next refresh, attempts reconnection. This handles both Docker stopping and starting while app is running.
+
 ### Module Responsibilities
 
 | Module | Purpose |
