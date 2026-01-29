@@ -10,7 +10,7 @@ use contui::docker::DockerClient;
 /// Contui - Advanced Docker TUI
 #[derive(Parser, Debug)]
 #[command(name = "contui")]
-#[command(about = "A terminal UI for Docker management")]
+#[command(about = "A powerful terminal UI for Docker container management")]
 #[command(version)]
 struct Cli {
     #[command(subcommand)]
