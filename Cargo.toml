@@ -1,6 +1,6 @@
 [package]
 name = "contui"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2021"
 authors = ["Contui Contributors"]
 description = "A powerful terminal UI for Docker container management with real-time monitoring"
