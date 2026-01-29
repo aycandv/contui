@@ -1,5 +1,9 @@
 # Contui
 
+[![CI](https://github.com/aycandv/contui/actions/workflows/ci.yml/badge.svg)](https://github.com/aycandv/contui/actions/workflows/ci.yml)
+[![Release](https://github.com/aycandv/contui/actions/workflows/release.yml/badge.svg)](https://github.com/aycandv/contui/actions/workflows/release.yml)
+[![GitHub release](https://img.shields.io/github/v/release/aycandv/contui?include_prereleases)](https://github.com/aycandv/contui/releases/latest)
+
 [![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
