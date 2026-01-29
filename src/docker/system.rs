@@ -152,10 +152,15 @@ impl DockerClient {
 
     /// Prune stopped containers (with detailed result)
     pub async fn prune_containers_detailed(&self) -> Result<PruneResult> {
+        info!("Calling prune_containers API");
+        // Create empty filters to prune all stopped containers
+        let filters: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+        let options = bollard::container::PruneContainersOptions { filters };
         let response = self
             .inner()
-            .prune_containers(None::<bollard::container::PruneContainersOptions<String>>)
+            .prune_containers(Some(options))
             .await?;
+        info!("Prune containers response: {:?} deleted", response.containers_deleted.as_ref().map(|v| v.len()).unwrap_or(0));
         Ok(PruneResult {
             space_reclaimed: response.space_reclaimed.unwrap_or(0),
             items_deleted: response.containers_deleted.unwrap_or_default(),

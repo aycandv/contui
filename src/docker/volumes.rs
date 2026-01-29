@@ -1,7 +1,7 @@
 //! Volume operations
 
 use bollard::volume::ListVolumesOptions;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use crate::core::{DockerError, Result, VolumeScope, VolumeSummary};
 use crate::docker::DockerClient;
@@ -44,22 +44,13 @@ impl DockerClient {
     pub async fn prune_volumes(&self) -> Result<u64> {
         info!("Pruning unused volumes");
 
-        // First, let's list all volumes to debug
-        match self.list_volumes().await {
-            Ok(volumes) => {
-                info!("Current volumes before prune: {} total", volumes.len());
-                for vol in &volumes {
-                    info!("  Volume: {} (scope: {:?})", vol.name, vol.scope);
-                }
-            }
-            Err(e) => {
-                warn!("Failed to list volumes before prune: {}", e);
-            }
-        }
-
+        // Use empty filters to prune all unused volumes
+        let filters: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+        let options = bollard::volume::PruneVolumesOptions { filters };
+        
         let result = self
             .inner()
-            .prune_volumes::<String>(None)
+            .prune_volumes(Some(options))
             .await
             .map_err(|e| DockerError::Volume(format!("Failed to prune volumes: {}", e)))?;
 

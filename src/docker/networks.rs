@@ -43,9 +43,12 @@ impl DockerClient {
     pub async fn prune_networks(&self) -> Result<u64> {
         info!("Pruning unused networks");
 
+        // Use empty filters to prune all unused networks
+        let filters: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+        let options = bollard::network::PruneNetworksOptions { filters };
         let result = self
             .inner()
-            .prune_networks::<String>(None)
+            .prune_networks(Some(options))
             .await
             .map_err(|e| DockerError::Network(format!("Failed to prune networks: {}", e)))?;
 
