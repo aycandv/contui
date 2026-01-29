@@ -190,8 +190,8 @@ impl From<bollard::models::ContainerSummary> for ContainerSummary {
             .filter_map(|p| {
                 Some(crate::core::PortMapping {
                     ip: p.ip.map(|s| s.to_string()),
-                    private_port: p.private_port as u16,
-                    public_port: p.public_port.map(|p| p as u16),
+                    private_port: p.private_port,
+                    public_port: p.public_port.map(|p| p),
                     protocol: p
                         .typ
                         .map(|t| format!("{:?}", t))

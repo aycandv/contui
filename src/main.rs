@@ -99,23 +99,43 @@ fn print_version() {
 }
 
 async fn check_for_updates_cli() -> Result<()> {
-    println!("Checking for updates...");
+    // Use animated update check with default config
+    let config = Config::default();
+    let result = check_for_updates(&config.update).await;
 
-    let current_version = env!("CARGO_PKG_VERSION");
+    match result {
+        UpdateCheckResult::UpdateAvailable {
+            current,
+            latest,
+            release_url,
+        } => {
+            // Prompt user for action
+            let info = UpdateInfo {
+                current_version: current,
+                latest_version: latest.clone(),
+                release_url,
+            };
 
-    match get_latest_version().await {
-        Ok(latest_version) => {
-            if latest_version == current_version {
-                println!("✓ You're on the latest version (v{})", current_version);
+            if is_interactive() {
+                match prompt_for_update(&info)? {
+                    UpdateDecision::Install => {
+                        install_update()?;
+                    }
+                    UpdateDecision::Skip => {
+                        println!("  Skipping update.");
+                    }
+                    UpdateDecision::SkipVersion => {
+                        save_skip_version(&latest)?;
+                    }
+                }
             } else {
-                println!("Current version: v{}", current_version);
-                println!("Latest version: v{}", latest_version);
-                println!("\nUpdate available! Run 'contui update' to install.");
+                println!("\n  Run 'contui update' to install.");
             }
         }
-        Err(e) => {
-            eprintln!("✗ Failed to check for updates: {}", e);
-            std::process::exit(1);
+        UpdateCheckResult::UpToDate
+        | UpdateCheckResult::Skipped { .. }
+        | UpdateCheckResult::Failed { .. } => {
+            // Animated check already displayed the result
         }
     }
 
@@ -123,41 +143,8 @@ async fn check_for_updates_cli() -> Result<()> {
 }
 
 async fn update_self() -> Result<()> {
-    use self_update::backends::github::Update;
-    use self_update::cargo_crate_version;
-
-    println!("Checking for updates...");
-
-    let current_version = cargo_crate_version!();
-
-    // Determine target identifier matching our release asset naming
-    let target = self_update::get_target();
-    println!("Platform: {}", target);
-
-    let status = Update::configure()
-        .repo_owner("aycandv")
-        .repo_name("contui")
-        .bin_name("contui")
-        .target(target)
-        .identifier("contui")
-        .show_download_progress(true)
-        .show_output(false)
-        .no_confirm(false)
-        .current_version(current_version)
-        .build()?
-        .update()?;
-
-    if status.updated() {
-        println!("\n✓ Successfully updated to v{}", status.version());
-        println!("  Previous version: v{}", current_version);
-    } else {
-        println!(
-            "\n✓ You're already on the latest version (v{})",
-            current_version
-        );
-    }
-
-    Ok(())
+    // Use the animated install_update from the update module
+    install_update()
 }
 
 async fn uninstall_self(purge: bool) -> Result<()> {
@@ -240,27 +227,6 @@ async fn uninstall_self(purge: bool) -> Result<()> {
     }
 
     Ok(())
-}
-
-async fn get_latest_version() -> Result<String> {
-    let client = reqwest::Client::new();
-    let response = client
-        .get("https://api.github.com/repos/aycandv/contui/releases/latest")
-        .header("User-Agent", "contui-update-checker")
-        .send()
-        .await?;
-
-    if !response.status().is_success() {
-        return Err(anyhow::anyhow!("GitHub API returned {}", response.status()));
-    }
-
-    let release: serde_json::Value = response.json().await?;
-    let tag = release["tag_name"]
-        .as_str()
-        .ok_or_else(|| anyhow::anyhow!("Could not parse version from GitHub response"))?;
-
-    // Remove 'v' prefix if present
-    Ok(tag.trim_start_matches('v').to_string())
 }
 
 async fn run_tui(cli: Cli) -> Result<()> {

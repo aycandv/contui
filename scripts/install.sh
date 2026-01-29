@@ -9,23 +9,124 @@ REPO="aycandv/contui"
 BINARY_NAME="contui"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 
-# Colors (if terminal supports it)
-RED='\033[0;31m'
+# Colors
+CYAN='\033[0;36m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+RED='\033[0;31m'
+BOLD='\033[1m'
+DIM='\033[2m'
 NC='\033[0m' # No Color
 
-# Print functions
-info() {
-    printf "${GREEN}info:${NC} %s\n" "$1"
+# Spinner frames (braille dots)
+SPINNER_FRAMES="⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏"
+
+# Global spinner PID
+SPINNER_PID=""
+
+# Delay between phases (0.5 seconds)
+delay() {
+    sleep 0.5
 }
 
-warn() {
-    printf "${YELLOW}warn:${NC} %s\n" "$1"
+# Start spinner with message
+start_spinner() {
+    local msg="$1"
+
+    # Only run spinner if we have a terminal
+    if [ -t 1 ]; then
+        (
+            while true; do
+                for frame in $SPINNER_FRAMES; do
+                    printf "\r  ${CYAN}%s${NC} %s" "$frame" "$msg"
+                    sleep 0.08
+                done
+            done
+        ) &
+        SPINNER_PID=$!
+    else
+        printf "  ... %s\n" "$msg"
+    fi
 }
 
-error() {
-    printf "${RED}error:${NC} %s\n" "$1" >&2
+# Stop spinner with success message
+stop_spinner_success() {
+    local msg="$1"
+    if [ -n "$SPINNER_PID" ]; then
+        kill "$SPINNER_PID" 2>/dev/null || true
+        wait "$SPINNER_PID" 2>/dev/null || true
+        SPINNER_PID=""
+    fi
+    printf "\r  ${GREEN}✓${NC} ${GREEN}%s${NC}                              \n" "$msg"
+}
+
+# Stop spinner with error message
+stop_spinner_error() {
+    local msg="$1"
+    if [ -n "$SPINNER_PID" ]; then
+        kill "$SPINNER_PID" 2>/dev/null || true
+        wait "$SPINNER_PID" 2>/dev/null || true
+        SPINNER_PID=""
+    fi
+    printf "\r  ${RED}✗${NC} ${RED}%s${NC}                              \n" "$msg"
+}
+
+# Print success checkmark
+print_success() {
+    printf "  ${GREEN}✓${NC} ${GREEN}%s${NC}\n" "$1"
+}
+
+# Print error
+print_error() {
+    printf "\n  ${RED}${BOLD}✗ %s${NC}\n" "$1" >&2
+    if [ -n "$2" ]; then
+        printf "\n     %s\n" "$2" >&2
+    fi
+}
+
+# Print box with message
+print_box() {
+    local width=47
+    local horizontal=""
+    local i=0
+    while [ $i -lt $width ]; do
+        horizontal="${horizontal}─"
+        i=$((i + 1))
+    done
+
+    echo ""
+    printf "  ┌%s┐\n" "$horizontal"
+    printf "  │%${width}s│\n" ""
+
+    # Print each argument as a line
+    for line in "$@"; do
+        # Calculate padding
+        local len=${#line}
+        local left_pad=$(( (width - len) / 2 ))
+        local right_pad=$(( width - len - left_pad ))
+        printf "  │%${left_pad}s%s%${right_pad}s│\n" "" "$line" ""
+    done
+
+    printf "  │%${width}s│\n" ""
+    printf "  └%s┘\n" "$horizontal"
+    echo ""
+}
+
+# Print ASCII banner
+print_banner() {
+    echo ""
+    printf "  ┌─────────────────────────────────────┐\n"
+    printf "  │                                     │\n"
+    printf "  │      ${CYAN}██████╗ ██████╗ ███╗   ██╗${NC}    │\n"
+    printf "  │     ${CYAN}██╔════╝██╔═══██╗████╗  ██║${NC}    │\n"
+    printf "  │     ${CYAN}██║     ██║   ██║██╔██╗ ██║${NC}    │\n"
+    printf "  │     ${CYAN}██║     ██║   ██║██║╚██╗██║${NC}    │\n"
+    printf "  │     ${CYAN}╚██████╗╚██████╔╝██║ ╚████║${NC}    │\n"
+    printf "  │      ${CYAN}╚═════╝ ╚═════╝ ╚═╝  ╚═══╝${NC}    │\n"
+    printf "  │           ${BOLD}CONTUI INSTALLER${NC}          │\n"
+    printf "  │                                     │\n"
+    printf "  └─────────────────────────────────────┘\n"
+    echo ""
 }
 
 # Detect OS
@@ -47,6 +148,21 @@ detect_arch() {
     esac
 }
 
+# Get target triple
+get_target() {
+    local os="$1"
+    local arch="$2"
+
+    case "${os}_${arch}" in
+        linux_x86_64)   echo "x86_64-unknown-linux-gnu";;
+        linux_aarch64)  echo "aarch64-unknown-linux-gnu";;
+        macos_x86_64)   echo "x86_64-apple-darwin";;
+        macos_aarch64)  echo "aarch64-apple-darwin";;
+        windows_x86_64) echo "x86_64-pc-windows-msvc";;
+        *)              echo "unknown";;
+    esac
+}
+
 # Get latest release version from GitHub
 get_latest_version() {
     curl -s "https://api.github.com/repos/${REPO}/releases/latest" | \
@@ -54,116 +170,150 @@ get_latest_version() {
         sed -E 's/.*"([^"]+)".*/\1/'
 }
 
-# Download binary
+# Download binary with progress
 download_binary() {
     local version="$1"
-    local os="$2"
-    local arch="$3"
-    local dest="$4"
-    
-    # Map OS and arch to release artifact names
-    local target
-    case "${os}_${arch}" in
-        linux_x86_64)   target="x86_64-unknown-linux-gnu";;
-        linux_aarch64)  target="aarch64-unknown-linux-gnu";;
-        macos_x86_64)   target="x86_64-apple-darwin";;
-        macos_aarch64)  target="aarch64-apple-darwin";;
-        windows_x86_64) target="x86_64-pc-windows-msvc";;
-        *)
-            error "Unsupported platform: ${os}_${arch}"
-            exit 1
-            ;;
-    esac
-    
+    local target="$2"
+    local dest="$3"
+
     local url="https://github.com/${REPO}/releases/download/${version}/${BINARY_NAME}-${target}.tar.gz"
-    
-    info "Downloading ${BINARY_NAME} ${version} for ${target}..."
-    
+
     if command -v curl >/dev/null 2>&1; then
-        curl -fsSL "$url" -o "$dest"
+        if [ -t 1 ]; then
+            # Terminal: show progress bar
+            curl -fSL --progress-bar "$url" -o "$dest"
+        else
+            # Non-terminal: silent
+            curl -fsSL "$url" -o "$dest"
+        fi
     elif command -v wget >/dev/null 2>&1; then
-        wget -q "$url" -O "$dest"
+        if [ -t 1 ]; then
+            wget --progress=bar:force "$url" -O "$dest" 2>&1
+        else
+            wget -q "$url" -O "$dest"
+        fi
     else
-        error "Neither curl nor wget found. Please install one of them."
+        print_error "Neither curl nor wget found" "Please install curl or wget and try again."
         exit 1
+    fi
+}
+
+# Cleanup on exit
+cleanup() {
+    if [ -n "$SPINNER_PID" ]; then
+        kill "$SPINNER_PID" 2>/dev/null || true
+    fi
+    if [ -n "$TMP_DIR" ] && [ -d "$TMP_DIR" ]; then
+        rm -rf "$TMP_DIR"
     fi
 }
 
 # Main installation
 main() {
-    info "Installing ${BINARY_NAME}..."
-    
-    # Detect platform
+    trap cleanup EXIT
+
+    print_banner
+
+    # Phase 1: Detect platform
+    start_spinner "Detecting platform..."
     OS=$(detect_os)
     ARCH=$(detect_arch)
-    
-    if [ "$OS" = "unknown" ] || [ "$ARCH" = "unknown" ]; then
-        error "Unsupported platform: $(uname -s) $(uname -m)"
-        error "Please build from source or download manually from GitHub releases."
+    TARGET=$(get_target "$OS" "$ARCH")
+    delay
+
+    if [ "$TARGET" = "unknown" ]; then
+        stop_spinner_error "Unsupported platform"
+        print_error "Unsupported platform: $(uname -s) $(uname -m)" \
+            "Please build from source or download manually from GitHub releases."
         exit 1
     fi
-    
-    info "Detected platform: ${OS} ${ARCH}"
-    
-    # Get latest version
+
+    stop_spinner_success "Detected: $OS $ARCH"
+    delay
+
+    # Phase 2: Fetch latest version
+    start_spinner "Fetching latest version..."
     VERSION=$(get_latest_version)
+    delay
+
     if [ -z "$VERSION" ]; then
-        error "Failed to get latest version. GitHub API may be rate limited."
-        error "Please try again later or download manually from:"
-        error "  https://github.com/${REPO}/releases"
+        stop_spinner_error "Failed to fetch version"
+        print_error "Failed to get latest version" \
+            "GitHub API may be rate limited. Try again later or download from:\n     https://github.com/${REPO}/releases"
         exit 1
     fi
-    
-    info "Latest version: ${VERSION}"
-    
-    # Create temp directory
+
+    stop_spinner_success "Latest version: $VERSION"
+    delay
+
+    # Phase 3: Download
     TMP_DIR=$(mktemp -d)
-    trap "rm -rf $TMP_DIR" EXIT
-    
-    # Download
     ARCHIVE="${TMP_DIR}/${BINARY_NAME}.tar.gz"
-    download_binary "$VERSION" "$OS" "$ARCH" "$ARCHIVE"
-    
-    # Extract
-    info "Extracting..."
-    tar -xzf "$ARCHIVE" -C "$TMP_DIR"
-    
-    # Install
+
+    printf "  📥 ${CYAN}Downloading contui %s...${NC}\n" "$VERSION"
+
+    if ! download_binary "$VERSION" "$TARGET" "$ARCHIVE"; then
+        print_error "Download failed" \
+            "Could not download from GitHub releases.\n     Check your network connection and try again."
+        exit 1
+    fi
+
+    delay
+
+    # Phase 4: Extract
+    start_spinner "Extracting archive..."
+    tar -xzf "$ARCHIVE" -C "$TMP_DIR" 2>/dev/null
+    delay
+    stop_spinner_success "Extracted"
+    delay
+
+    # Phase 5: Install
+    start_spinner "Installing to ${INSTALL_DIR}..."
+
     if [ ! -d "$INSTALL_DIR" ]; then
-        info "Creating directory: ${INSTALL_DIR}"
         mkdir -p "$INSTALL_DIR"
     fi
-    
+
     local binary_path="${TMP_DIR}/${BINARY_NAME}"
     if [ "$OS" = "windows" ]; then
         binary_path="${binary_path}.exe"
     fi
-    
-    info "Installing to: ${INSTALL_DIR}/${BINARY_NAME}"
+
     cp "$binary_path" "${INSTALL_DIR}/${BINARY_NAME}"
     chmod +x "${INSTALL_DIR}/${BINARY_NAME}"
-    
-    # Verify installation
-    if command -v "$BINARY_NAME" >/dev/null 2>&1; then
-        INSTALLED_VERSION=$($BINARY_NAME --version 2>/dev/null || echo "unknown")
-        info "Successfully installed ${INSTALLED_VERSION}!"
-    elif [ -f "${INSTALL_DIR}/${BINARY_NAME}" ]; then
-        info "Successfully installed ${BINARY_NAME}!"
-        warn "${INSTALL_DIR} is not in your PATH"
-        warn "Add the following to your shell profile:"
-        warn "  export PATH=\"${INSTALL_DIR}:\$PATH\""
+    delay
+    stop_spinner_success "Installed"
+    delay
+
+    # Phase 6: Verify
+    start_spinner "Verifying..."
+    delay
+
+    if [ -x "${INSTALL_DIR}/${BINARY_NAME}" ]; then
+        INSTALLED_VERSION=$("${INSTALL_DIR}/${BINARY_NAME}" --version 2>/dev/null || echo "contui")
+        stop_spinner_success "Verified: $INSTALLED_VERSION"
     else
-        error "Installation failed"
+        stop_spinner_error "Verification failed"
+        print_error "Installation verification failed"
         exit 1
     fi
-    
-    # Post-install message
-    echo ""
-    info "To get started:"
-    echo "  ${BINARY_NAME} --help"
-    echo ""
-    info "For more information, visit:"
-    echo "  https://github.com/${REPO}"
+
+    # Success message
+    print_box \
+        "✅ contui installed successfully!" \
+        "" \
+        "Get started:" \
+        "  \$ contui              Launch TUI" \
+        "  \$ contui --help       Show help" \
+        "" \
+        "📚 Docs: github.com/${REPO}"
+
+    # PATH warning if needed
+    if ! command -v "$BINARY_NAME" >/dev/null 2>&1; then
+        printf "  ${YELLOW}⚠${NC}  ${DIM}%s is not in your PATH${NC}\n" "$INSTALL_DIR"
+        printf "     ${DIM}Add to your shell profile:${NC}\n"
+        printf "     ${DIM}export PATH=\"%s:\$PATH\"${NC}\n\n" "$INSTALL_DIR"
+    fi
 }
 
 # Run main function

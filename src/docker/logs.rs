@@ -111,7 +111,7 @@ impl DockerClient {
                         e
                     )))
                 })
-                .and_then(|log| Self::parse_log_entry(log))
+                .and_then(Self::parse_log_entry)
         })
     }
 

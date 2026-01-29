@@ -377,9 +377,7 @@ impl UiApp {
                 UiAction::None
             }
             // Export logs to file
-            KeyCode::Char('s') => {
-                return UiAction::ExportLogs;
-            }
+            KeyCode::Char('s') => UiAction::ExportLogs,
             // Scroll up
             KeyCode::Up | KeyCode::PageUp => {
                 let amount = if key.code == KeyCode::PageUp { 10 } else { 1 };
@@ -505,9 +503,11 @@ impl UiApp {
             }
             KeyCode::Enter => {
                 // Check if any option is selected
-                let has_selection = self.state.prune_dialog.as_ref().map_or(false, |d| {
-                    d.containers || d.images || d.volumes || d.networks
-                });
+                let has_selection = self
+                    .state
+                    .prune_dialog
+                    .as_ref()
+                    .is_some_and(|d| d.containers || d.images || d.volumes || d.networks);
 
                 if has_selection {
                     // Confirm and execute prune - dialog will be closed after getting options

@@ -42,7 +42,7 @@ impl DockerClient {
                         e
                     )))
                 })
-                .and_then(|stats| Self::parse_stats_entry(stats))
+                .and_then(Self::parse_stats_entry)
         })
     }
 
