@@ -2,6 +2,7 @@
 
 use bollard::models::SystemDataUsageResponse;
 use serde::{Deserialize, Serialize};
+use tracing::info;
 
 /// Disk usage information for a specific resource type
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -214,6 +215,20 @@ fn parse_disk_usage(response: SystemDataUsageResponse) -> SystemDiskUsage {
             // Only mark as reclaimable if we know the size
             if ref_count == 0 && size >= 0 {
                 usage.volumes.reclaimable += size;
+                info!(
+                    "Volume '{}' is reclaimable: size={}, ref_count={}",
+                    volume.name, size, ref_count
+                );
+            } else if size >= 0 {
+                info!(
+                    "Volume '{}' is NOT reclaimable: size={}, ref_count={}",
+                    volume.name, size, ref_count
+                );
+            } else {
+                info!(
+                    "Volume '{}' has no usage data (size={}, ref_count={})",
+                    volume.name, size, ref_count
+                );
             }
         }
     }

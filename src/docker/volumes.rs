@@ -1,7 +1,7 @@
 //! Volume operations
 
 use bollard::volume::ListVolumesOptions;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::core::{DockerError, Result, VolumeScope, VolumeSummary};
 use crate::docker::DockerClient;
@@ -44,6 +44,19 @@ impl DockerClient {
     pub async fn prune_volumes(&self) -> Result<u64> {
         info!("Pruning unused volumes");
 
+        // First, let's list all volumes to debug
+        match self.list_volumes().await {
+            Ok(volumes) => {
+                info!("Current volumes before prune: {} total", volumes.len());
+                for vol in &volumes {
+                    info!("  Volume: {} (scope: {:?})", vol.name, vol.scope);
+                }
+            }
+            Err(e) => {
+                warn!("Failed to list volumes before prune: {}", e);
+            }
+        }
+
         let result = self
             .inner()
             .prune_volumes::<String>(None)
@@ -59,7 +72,8 @@ impl DockerClient {
                 info!("  Deleted volume: {}", vol);
             }
         } else {
-            info!("No volumes were pruned (reclaimed: {} bytes)", reclaimed);
+            info!("No volumes were pruned by Docker API (reclaimed: {} bytes)", reclaimed);
+            info!("This usually means volumes are still referenced by stopped containers");
         }
         
         Ok(reclaimed)
