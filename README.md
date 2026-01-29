@@ -255,6 +255,38 @@ export DOCKER_HOST=tcp://192.168.1.100:2375
 contui
 ```
 
+## Versioning & Releases
+
+Contui uses [Semantic Versioning](https://semver.org/) (MAJOR.MINOR.PATCH):
+- **MAJOR**: Breaking changes
+- **MINOR**: New features (backward compatible)
+- **PATCH**: Bug fixes
+
+### Automatic Version Bump
+
+You can manually trigger a version bump via GitHub Actions:
+
+1. Go to **Actions** tab → **Version Bump**
+2. Click **Run workflow**
+3. Select bump type: `patch`, `minor`, or `major`
+4. Click **Run workflow**
+
+This will:
+- Update `Cargo.toml` version
+- Create a git commit
+- Push the commit and create a new tag
+- Trigger the release workflow automatically
+
+### Conventional Commits (Optional)
+
+For automatic semantic releases, use [Conventional Commits](https://www.conventionalcommits.org/):
+
+```
+feat: add new feature        → bumps MINOR
+fix: fix a bug              → bumps PATCH
+feat!: breaking change      → bumps MAJOR
+```
+
 ## Building
 
 ### Requirements

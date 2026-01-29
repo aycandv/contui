@@ -1,0 +1,55 @@
+name: Semantic Release
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  release:
+    name: Semantic Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Install cargo-bump
+      run: cargo install cargo-bump
+
+    - name: Semantic Release
+      uses: cycjimmy/semantic-release-action@v4
+      with:
+        semantic_version: 22
+        extra_plugins: |
+          @semantic-release/commit-analyzer
+          @semantic-release/release-notes-generator
+          @semantic-release/changelog
+          @semantic-release/git
+          @semantic-release/github
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Update Cargo.toml version
+      if: steps.semantic.outputs.new_release_published == 'true'
+      run: |
+        NEW_VERSION=${{ steps.semantic.outputs.new_release_version }}
+        cargo bump $NEW_VERSION
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add Cargo.toml Cargo.lock
+        git commit -m "chore(release): bump version to ${NEW_VERSION} [skip ci]"
+        git push
