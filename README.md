@@ -24,9 +24,34 @@ A powerful, fast, and intuitive Terminal User Interface (TUI) for Docker contain
 ### Prerequisites
 
 - Docker Engine (20.10+ recommended)
-- Rust toolchain (1.70+) - only for building from source
+- For cargo installation: Rust toolchain (1.70+)
 
-### Option 1: Install from Source (Recommended)
+### Option 1: Quick Install (Recommended)
+
+Install Contui with a single command using our standalone installer:
+
+**macOS / Linux:**
+```bash
+curl -LsSf https://raw.githubusercontent.com/aycandv/contui/main/scripts/install.sh | sh
+```
+
+**Windows (PowerShell):**
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/aycandv/contui/main/scripts/install.ps1 | iex"
+```
+
+The installer will:
+- Detect your OS and architecture
+- Download the latest release from GitHub
+- Install to `~/.local/bin` (macOS/Linux) or `%USERPROFILE%\.local\bin` (Windows)
+
+After installation, you may need to add the install directory to your PATH:
+```bash
+# Add to your shell profile (~/.bashrc, ~/.zshrc, etc.)
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+### Option 2: Install from Source
 
 ```bash
 # Clone the repository
@@ -40,7 +65,7 @@ cargo install --path .
 contui
 ```
 
-### Option 2: Build from Source (Development)
+### Option 3: Build from Source (Development)
 
 ```bash
 # Clone the repository
@@ -54,10 +79,16 @@ cargo build --release
 ./target/release/contui
 ```
 
-### Option 3: Using Cargo
+### Option 4: Using Cargo
 
+Once published to crates.io:
 ```bash
 cargo install contui
+```
+
+Or install directly from GitHub:
+```bash
+cargo install --git https://github.com/aycandv/contui
 ```
 
 ## Usage
