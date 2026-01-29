@@ -197,20 +197,22 @@ fn parse_disk_usage(response: SystemDataUsageResponse) -> SystemDiskUsage {
     // Parse volumes
     if let Some(volumes) = response.volumes {
         for volume in volumes {
-            let size = volume
+            // usage_data is only available for local volumes
+            let (size, ref_count) = volume
                 .usage_data
                 .as_ref()
-                .map(|u| u.size)
-                .unwrap_or(0);
-            usage.volumes.total += size;
+                .map(|u| (u.size, u.ref_count))
+                .unwrap_or((-1, -1));
+            
+            // Only count size if it's available (not -1)
+            if size >= 0 {
+                usage.volumes.total += size;
+            }
             usage.volumes.count += 1;
-            // Volumes not used by any container are reclaimable
-            let ref_count = volume
-                .usage_data
-                .as_ref()
-                .map(|u| u.ref_count)
-                .unwrap_or(0);
-            if ref_count == 0 {
+            
+            // Volumes not used by any container (ref_count == 0) are reclaimable
+            // Only mark as reclaimable if we know the size
+            if ref_count == 0 && size >= 0 {
                 usage.volumes.reclaimable += size;
             }
         }

@@ -721,16 +721,23 @@ impl App {
         
         if let Some(client) = &self.docker_client {
             if let Some(options) = options {
-                info!("Pruning system resources");
+                info!("Pruning system resources: containers={}, images={}, volumes={}, networks={}", 
+                    options.containers, options.images, options.volumes, options.networks);
+                
                 let mut total_reclaimed: i64 = 0;
                 let mut has_error = false;
+                let mut pruned_containers = 0usize;
+                let mut pruned_images = 0u64;
+                let mut pruned_volumes = 0u64;
+                let mut pruned_networks = 0u64;
 
                 // Prune containers
                 if options.containers {
                     match client.prune_containers_detailed().await {
                         Ok(result) => {
                             total_reclaimed += result.space_reclaimed;
-                            info!("Pruned {} containers", result.items_deleted.len());
+                            pruned_containers = result.items_deleted.len();
+                            info!("Pruned {} containers", pruned_containers);
                         }
                         Err(e) => {
                             error!("Failed to prune containers: {}", e);
@@ -744,6 +751,7 @@ impl App {
                     match client.prune_images().await {
                         Ok(reclaimed) => {
                             total_reclaimed += reclaimed as i64;
+                            pruned_images = reclaimed;
                             info!("Pruned images, reclaimed {} bytes", reclaimed);
                         }
                         Err(e) => {
@@ -759,9 +767,10 @@ impl App {
                     match client.prune_volumes().await {
                         Ok(reclaimed) => {
                             total_reclaimed += reclaimed as i64;
+                            pruned_volumes = reclaimed;
                             info!("Pruned volumes, reclaimed {} bytes", reclaimed);
                             if reclaimed == 0 {
-                                info!("No unused volumes found to prune");
+                                info!("No unused volumes found to prune - volumes may still be referenced by stopped containers");
                             }
                         }
                         Err(e) => {
@@ -775,6 +784,7 @@ impl App {
                 if options.networks {
                     match client.prune_networks().await {
                         Ok(count) => {
+                            pruned_networks = count;
                             info!("Pruned {} networks", count);
                         }
                         Err(e) => {
@@ -786,19 +796,37 @@ impl App {
 
                 // Note: Build cache pruning removed - not available in bollard 0.18
 
-                // Show notification
+                // Build detailed notification message
                 let size_str = crate::docker::format_bytes_size(total_reclaimed);
-                if has_error {
-                    self.state.add_notification(
-                        format!("Pruned resources, reclaimed {} (some errors occurred)", size_str),
-                        NotificationLevel::Warning,
-                    );
-                } else {
-                    self.state.add_notification(
-                        format!("Pruned resources, reclaimed {}", size_str),
-                        NotificationLevel::Success,
-                    );
+                let mut details = vec![];
+                if options.containers && pruned_containers > 0 {
+                    details.push(format!("{} containers", pruned_containers));
                 }
+                if options.images && pruned_images > 0 {
+                    details.push(format!("images"));
+                }
+                if options.volumes && pruned_volumes > 0 {
+                    details.push(format!("volumes"));
+                }
+                if options.networks && pruned_networks > 0 {
+                    details.push(format!("{} networks", pruned_networks));
+                }
+                
+                let message = if details.is_empty() {
+                    format!("Nothing to prune (reclaimable: {})", size_str)
+                } else {
+                    format!("Pruned {} ({})", size_str, details.join(", "))
+                };
+                
+                let level = if has_error {
+                    NotificationLevel::Warning
+                } else if details.is_empty() {
+                    NotificationLevel::Info
+                } else {
+                    NotificationLevel::Success
+                };
+                
+                self.state.add_notification(message, level);
 
                 // Refresh data to show updated disk usage
                 self.refresh_data().await;

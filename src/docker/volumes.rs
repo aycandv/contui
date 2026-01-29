@@ -51,7 +51,17 @@ impl DockerClient {
             .map_err(|e| DockerError::Volume(format!("Failed to prune volumes: {}", e)))?;
 
         let reclaimed = result.space_reclaimed.unwrap_or(0) as u64;
-        info!("Pruned volumes, reclaimed {} bytes", reclaimed);
+        let deleted_count = result.volumes_deleted.as_ref().map(|v| v.len()).unwrap_or(0);
+        
+        if deleted_count > 0 {
+            info!("Pruned {} volumes, reclaimed {} bytes", deleted_count, reclaimed);
+            for vol in result.volumes_deleted.unwrap_or_default() {
+                info!("  Deleted volume: {}", vol);
+            }
+        } else {
+            info!("No volumes were pruned (reclaimed: {} bytes)", reclaimed);
+        }
+        
         Ok(reclaimed)
     }
 }
