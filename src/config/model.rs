@@ -20,6 +20,8 @@ pub struct Config {
     pub monitoring: MonitoringConfig,
     #[serde(default)]
     pub logging: LogConfig,
+    #[serde(default)]
+    pub update: UpdateConfig,
 }
 
 /// General application settings
@@ -187,6 +189,53 @@ impl Default for LogConfig {
     }
 }
 
+/// Update check frequency
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum CheckFrequency {
+    /// Check on every startup
+    Always,
+    /// Check once per day (default)
+    #[default]
+    Daily,
+    /// Check once per week
+    Weekly,
+    /// Never check automatically
+    Never,
+}
+
+/// Update checking configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateConfig {
+    /// Enable/disable automatic update checks on startup
+    #[serde(default = "default_true")]
+    pub check_on_startup: bool,
+    /// How often to check for updates
+    #[serde(default)]
+    pub check_frequency: CheckFrequency,
+    /// Network timeout in seconds for update checks
+    #[serde(default = "default_update_timeout")]
+    pub timeout_seconds: u64,
+    /// Whether to prompt the user to install updates
+    #[serde(default = "default_true")]
+    pub prompt_to_install: bool,
+    /// Skip a specific version (user chose to skip)
+    #[serde(default)]
+    pub skip_version: Option<String>,
+}
+
+impl Default for UpdateConfig {
+    fn default() -> Self {
+        Self {
+            check_on_startup: true,
+            check_frequency: CheckFrequency::default(),
+            timeout_seconds: default_update_timeout(),
+            prompt_to_install: true,
+            skip_version: None,
+        }
+    }
+}
+
 // Default value functions
 fn default_poll_interval() -> u64 {
     1000
@@ -222,6 +271,10 @@ fn default_max_files() -> u32 {
 
 fn default_true() -> bool {
     true
+}
+
+fn default_update_timeout() -> u64 {
+    3
 }
 
 #[cfg(test)]

@@ -93,6 +93,7 @@ impl Default for Config {
             registries: vec![],
             monitoring: MonitoringConfig::default(),
             logging: LogConfig::default(),
+            update: UpdateConfig::default(),
         }
     }
 }
