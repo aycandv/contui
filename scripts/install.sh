@@ -84,48 +84,16 @@ print_error() {
     fi
 }
 
-# Print box with message
-print_box() {
-    local width=47
-    local horizontal=""
-    local i=0
-    while [ $i -lt $width ]; do
-        horizontal="${horizontal}─"
-        i=$((i + 1))
-    done
-
-    echo ""
-    printf "  ┌%s┐\n" "$horizontal"
-    printf "  │%${width}s│\n" ""
-
-    # Print each argument as a line
-    for line in "$@"; do
-        # Calculate padding
-        local len=${#line}
-        local left_pad=$(( (width - len) / 2 ))
-        local right_pad=$(( width - len - left_pad ))
-        printf "  │%${left_pad}s%s%${right_pad}s│\n" "" "$line" ""
-    done
-
-    printf "  │%${width}s│\n" ""
-    printf "  └%s┘\n" "$horizontal"
-    echo ""
-}
-
 # Print ASCII banner
 print_banner() {
     echo ""
-    printf "  ┌─────────────────────────────────────┐\n"
-    printf "  │                                     │\n"
-    printf "  │      ${CYAN}██████╗ ██████╗ ███╗   ██╗${NC}    │\n"
-    printf "  │     ${CYAN}██╔════╝██╔═══██╗████╗  ██║${NC}    │\n"
-    printf "  │     ${CYAN}██║     ██║   ██║██╔██╗ ██║${NC}    │\n"
-    printf "  │     ${CYAN}██║     ██║   ██║██║╚██╗██║${NC}    │\n"
-    printf "  │     ${CYAN}╚██████╗╚██████╔╝██║ ╚████║${NC}    │\n"
-    printf "  │      ${CYAN}╚═════╝ ╚═════╝ ╚═╝  ╚═══╝${NC}    │\n"
-    printf "  │           ${BOLD}CONTUI INSTALLER${NC}          │\n"
-    printf "  │                                     │\n"
-    printf "  └─────────────────────────────────────┘\n"
+    printf "       ${CYAN}██████╗ ██████╗ ███╗   ██╗${NC}\n"
+    printf "      ${CYAN}██╔════╝██╔═══██╗████╗  ██║${NC}\n"
+    printf "      ${CYAN}██║     ██║   ██║██╔██╗ ██║${NC}\n"
+    printf "      ${CYAN}██║     ██║   ██║██║╚██╗██║${NC}\n"
+    printf "      ${CYAN}╚██████╗╚██████╔╝██║ ╚████║${NC}\n"
+    printf "       ${CYAN}╚═════╝ ╚═════╝ ╚═╝  ╚═══╝${NC}\n"
+    printf "         ${BOLD}CONTUI INSTALLER${NC}\n"
     echo ""
 }
 
@@ -299,14 +267,15 @@ main() {
     fi
 
     # Success message
-    print_box \
-        "✅ contui installed successfully!" \
-        "" \
-        "Get started:" \
-        "  \$ contui              Launch TUI" \
-        "  \$ contui --help       Show help" \
-        "" \
-        "📚 Docs: github.com/${REPO}"
+    echo ""
+    printf "  ${GREEN}${BOLD}✅ contui installed successfully!${NC}\n"
+    echo ""
+    printf "  Get started:\n"
+    printf "    ${CYAN}\$ contui${NC}              Launch TUI\n"
+    printf "    ${CYAN}\$ contui --help${NC}       Show help\n"
+    echo ""
+    printf "  📚 Docs: \033]8;;https://github.com/${REPO}\033\\${CYAN}github.com/${REPO}${NC}\033]8;;\033\\\n"
+    echo ""
 
     # PATH warning if needed
     if ! command -v "$BINARY_NAME" >/dev/null 2>&1; then

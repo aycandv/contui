@@ -5,8 +5,8 @@
 
 use std::time::Duration;
 
-use console::{style, Style};
-use indicatif::{ProgressBar, ProgressStyle};
+use console::{style, Style, Term};
+use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 
 /// Spinner frames using braille dots for smooth animation
 const SPINNER_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -23,6 +23,8 @@ const PHASE_DELAY: Duration = Duration::from_millis(500);
 /// Call `.finish_with_message()` when done.
 pub fn spinner(message: &str) -> ProgressBar {
     let pb = ProgressBar::new_spinner();
+    // Force drawing to terminal
+    pb.set_draw_target(ProgressDrawTarget::term(Term::stdout(), 20));
     pb.set_style(
         ProgressStyle::default_spinner()
             .tick_strings(SPINNER_FRAMES)
@@ -48,41 +50,6 @@ pub fn progress_bar(total: u64) -> ProgressBar {
             .progress_chars("━━░"),
     );
     pb
-}
-
-/// Print a bordered message box.
-///
-/// Each line is printed inside a box using Unicode box-drawing characters.
-pub fn print_box(lines: &[&str]) {
-    // Find the maximum line width
-    let max_width = lines
-        .iter()
-        .map(|l| console::measure_text_width(l))
-        .max()
-        .unwrap_or(0);
-    let box_width = max_width + 4; // 2 chars padding on each side
-
-    let horizontal = "─".repeat(box_width);
-
-    println!();
-    println!("  ┌{}┐", horizontal);
-    println!("  │{}│", " ".repeat(box_width));
-
-    for line in lines {
-        let padding = box_width - console::measure_text_width(line) - 2;
-        let left_pad = 1;
-        let right_pad = padding - left_pad;
-        println!(
-            "  │{}{}{}│",
-            " ".repeat(left_pad),
-            line,
-            " ".repeat(right_pad.max(0))
-        );
-    }
-
-    println!("  │{}│", " ".repeat(box_width));
-    println!("  └{}┘", horizontal);
-    println!();
 }
 
 /// Print a success message with green checkmark.

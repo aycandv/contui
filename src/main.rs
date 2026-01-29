@@ -7,8 +7,8 @@ use contui::config::Config;
 use contui::core::ConnectionInfo;
 use contui::docker::DockerClient;
 use contui::update::{
-    check_for_updates, install_update, is_interactive, prompt_for_update, save_skip_version,
-    UpdateCheckResult, UpdateDecision, UpdateInfo,
+    check_for_updates, check_for_updates_now, install_update, is_interactive, prompt_for_update,
+    save_skip_version, UpdateCheckResult, UpdateDecision, UpdateInfo,
 };
 
 /// Contui - Advanced Docker TUI
@@ -99,9 +99,8 @@ fn print_version() {
 }
 
 async fn check_for_updates_cli() -> Result<()> {
-    // Use animated update check with default config
-    let config = Config::default();
-    let result = check_for_updates(&config.update).await;
+    // Force check regardless of frequency (explicit user request)
+    let result = check_for_updates_now().await;
 
     match result {
         UpdateCheckResult::UpdateAvailable {
@@ -143,8 +142,43 @@ async fn check_for_updates_cli() -> Result<()> {
 }
 
 async fn update_self() -> Result<()> {
-    // Use the animated install_update from the update module
-    install_update()
+    use contui::update::ui as update_ui;
+
+    // First check if update is available with our animated spinner
+    let result = check_for_updates_now().await;
+
+    match result {
+        UpdateCheckResult::UpdateAvailable { latest, .. } => {
+            // Ask user to confirm
+            println!();
+            print!("  Install v{}? [Y/n] ", latest);
+            std::io::Write::flush(&mut std::io::stdout())?;
+
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input)?;
+
+            match input.trim().to_lowercase().as_str() {
+                "" | "y" | "yes" => {
+                    install_update()?;
+                }
+                _ => {
+                    println!("  Update cancelled.");
+                }
+            }
+        }
+        UpdateCheckResult::UpToDate => {
+            // Already printed by check_for_updates_now
+        }
+        UpdateCheckResult::Failed { error } => {
+            update_ui::print_error("Update check failed", Some(&error));
+            std::process::exit(1);
+        }
+        UpdateCheckResult::Skipped { reason } => {
+            update_ui::print_warning(&format!("Skipped: {}", reason));
+        }
+    }
+
+    Ok(())
 }
 
 async fn uninstall_self(purge: bool) -> Result<()> {
