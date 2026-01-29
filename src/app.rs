@@ -376,6 +376,9 @@ impl App {
                     );
                 }
             }
+        } else {
+            self.state
+                .add_notification("Docker not connected", NotificationLevel::Error);
         }
     }
 
@@ -398,6 +401,9 @@ impl App {
                     );
                 }
             }
+        } else {
+            self.state
+                .add_notification("Docker not connected", NotificationLevel::Error);
         }
     }
 
@@ -420,6 +426,9 @@ impl App {
                     );
                 }
             }
+        } else {
+            self.state
+                .add_notification("Docker not connected", NotificationLevel::Error);
         }
     }
 
@@ -442,6 +451,9 @@ impl App {
                     );
                 }
             }
+        } else {
+            self.state
+                .add_notification("Docker not connected", NotificationLevel::Error);
         }
     }
 
@@ -464,6 +476,9 @@ impl App {
                     );
                 }
             }
+        } else {
+            self.state
+                .add_notification("Docker not connected", NotificationLevel::Error);
         }
     }
 
@@ -486,6 +501,9 @@ impl App {
                     );
                 }
             }
+        } else {
+            self.state
+                .add_notification("Docker not connected", NotificationLevel::Error);
         }
     }
 
@@ -508,6 +526,9 @@ impl App {
                     );
                 }
             }
+        } else {
+            self.state
+                .add_notification("Docker not connected", NotificationLevel::Error);
         }
     }
 
@@ -529,7 +550,7 @@ impl App {
                 }
                 Err(e) => {
                     // Still can't connect, skip refresh
-                    debug!("Connection attempt failed: {}", e);
+                    warn!("Connection attempt failed: {}", e);
                     return;
                 }
             }
