@@ -715,8 +715,12 @@ impl App {
 
     /// Prune system resources based on selected options
     async fn prune_system(&mut self) {
+        // Get options first, then close dialog
+        let options = self.state.get_prune_options();
+        self.state.close_prune_dialog();
+        
         if let Some(client) = &self.docker_client {
-            if let Some(options) = self.state.get_prune_options() {
+            if let Some(options) = options {
                 info!("Pruning system resources");
                 let mut total_reclaimed: i64 = 0;
                 let mut has_error = false;

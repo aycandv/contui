@@ -498,17 +498,25 @@ impl UiApp {
                 self.state.prune_dialog_next();
                 UiAction::None
             }
-            // Toggle checkbox
-            KeyCode::Char(' ') | KeyCode::Enter => {
-                if key.code == KeyCode::Enter && self.state.prune_dialog.as_ref().map_or(false, |d| {
-                    d.containers || d.images || d.volumes || d.networks || d.build_cache
-                }) {
-                    // Confirm and execute prune
-                    self.state.close_prune_dialog();
-                    return UiAction::PruneSystem;
-                }
+            // Toggle checkbox with Space, confirm with Enter
+            KeyCode::Char(' ') => {
                 self.state.prune_dialog_toggle();
                 UiAction::None
+            }
+            KeyCode::Enter => {
+                // Check if any option is selected
+                let has_selection = self.state.prune_dialog.as_ref().map_or(false, |d| {
+                    d.containers || d.images || d.volumes || d.networks || d.build_cache
+                });
+                
+                if has_selection {
+                    // Confirm and execute prune - dialog will be closed after getting options
+                    UiAction::PruneSystem
+                } else {
+                    // Nothing selected, just toggle current item
+                    self.state.prune_dialog_toggle();
+                    UiAction::None
+                }
             }
             _ => UiAction::None,
         }
