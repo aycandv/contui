@@ -106,11 +106,7 @@ pub fn render_log_viewer(frame: &mut Frame, area: Rect, state: &LogViewState) {
         };
         let search_text = format!(
             "/{}  {}",
-            state
-                .search_pattern
-                .as_ref()
-                .map(|s| s.as_str())
-                .unwrap_or(""),
+            state.search_pattern.as_deref().unwrap_or(""),
             match_text
         );
         let search_block = Block::default()
@@ -139,7 +135,7 @@ pub fn render_log_viewer(frame: &mut Frame, area: Rect, state: &LogViewState) {
 
             // Time filter (show logs after the cutoff time)
             let time_match = state.time_filter.map_or(true, |cutoff| {
-                entry.timestamp.map_or(false, |ts| ts >= cutoff)
+                entry.timestamp.is_some_and(|ts| ts >= cutoff)
             });
 
             level_match && time_match

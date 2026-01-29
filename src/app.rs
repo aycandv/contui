@@ -805,10 +805,10 @@ impl App {
                     details.push(format!("{} containers", pruned_containers));
                 }
                 if options.images && pruned_images > 0 {
-                    details.push(format!("images"));
+                    details.push("images".to_string());
                 }
                 if options.volumes && pruned_volumes > 0 {
-                    details.push(format!("volumes"));
+                    details.push("volumes".to_string());
                 }
                 if options.networks && pruned_networks > 0 {
                     details.push(format!("{} networks", pruned_networks));
@@ -1044,7 +1044,7 @@ impl App {
 
                 // Apply time filter
                 let time_match = log_view.time_filter.map_or(true, |cutoff| {
-                    entry.timestamp.map_or(false, |ts| ts >= cutoff)
+                    entry.timestamp.is_some_and(|ts| ts >= cutoff)
                 });
 
                 // Apply search filter
