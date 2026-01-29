@@ -84,6 +84,11 @@ impl UiApp {
             return self.handle_image_detail_view_key(key);
         }
 
+        // If prune dialog is active, handle prune dialog keys (modal, blocks everything)
+        if self.state.prune_dialog.is_some() {
+            return self.handle_prune_dialog_key(key);
+        }
+
         // Global key handlers
         match key.code {
             // Quit
@@ -197,6 +202,10 @@ impl UiApp {
             }
             KeyCode::Char('p') if self.state.current_tab == Tab::Networks => {
                 self.handle_network_prune_action()
+            }
+            KeyCode::Char('p') if self.state.current_tab == Tab::System => {
+                self.state.open_prune_dialog();
+                UiAction::None
             }
 
             // List navigation
@@ -465,6 +474,40 @@ impl UiApp {
             // End to bottom
             KeyCode::End => {
                 self.state.scroll_image_detail_view_down(9999);
+                UiAction::None
+            }
+            _ => UiAction::None,
+        }
+    }
+
+    /// Handle keys when prune dialog is open
+    fn handle_prune_dialog_key(&mut self, key: KeyEvent) -> UiAction {
+        match key.code {
+            // Close dialog
+            KeyCode::Char('q') | KeyCode::Esc => {
+                self.state.close_prune_dialog();
+                UiAction::None
+            }
+            // Navigate up
+            KeyCode::Up => {
+                self.state.prune_dialog_prev();
+                UiAction::None
+            }
+            // Navigate down
+            KeyCode::Down => {
+                self.state.prune_dialog_next();
+                UiAction::None
+            }
+            // Toggle checkbox
+            KeyCode::Char(' ') | KeyCode::Enter => {
+                if key.code == KeyCode::Enter && self.state.prune_dialog.as_ref().map_or(false, |d| {
+                    d.containers || d.images || d.volumes || d.networks || d.build_cache
+                }) {
+                    // Confirm and execute prune
+                    self.state.close_prune_dialog();
+                    return UiAction::PruneSystem;
+                }
+                self.state.prune_dialog_toggle();
                 UiAction::None
             }
             _ => UiAction::None,
@@ -858,6 +901,11 @@ impl UiApp {
             self.render_confirmation_dialog(frame, area, confirm);
         }
 
+        // Render prune dialog if active
+        if self.state.prune_dialog.is_some() {
+            self.render_prune_dialog(frame, area);
+        }
+
         // Render help overlay if active (on top of everything except notifications)
         if self.state.show_help {
             self.render_help_overlay(frame, area);
@@ -926,6 +974,91 @@ impl UiApp {
         ]);
         let buttons_para = Paragraph::new(buttons).alignment(ratatui::layout::Alignment::Center);
         frame.render_widget(buttons_para, layout[2]);
+    }
+
+    /// Render prune dialog
+    fn render_prune_dialog(&self, frame: &mut Frame, area: Rect) {
+        let dialog = match &self.state.prune_dialog {
+            Some(d) => d,
+            None => return,
+        };
+
+        // Create a centered popup (50% width, min 12 lines)
+        let popup_area = Self::centered_rect(50, 40, area);
+
+        // Clear the background
+        frame.render_widget(Clear, popup_area);
+
+        // Create layout for dialog content
+        let layout = Layout::default()
+            .direction(Direction::Vertical)
+            .margin(2)
+            .constraints([
+                Constraint::Length(1),  // Title
+                Constraint::Length(1),  // Spacer
+                Constraint::Length(6),  // Options
+                Constraint::Length(1),  // Spacer
+                Constraint::Length(1),  // Buttons hint
+            ])
+            .split(popup_area);
+
+        // Render dialog block with title
+        let block = Block::default()
+            .title(" Prune Unused Resources ")
+            .title_style(
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Yellow));
+        frame.render_widget(block, popup_area);
+
+        // Title
+        let title = Paragraph::new("Select what to prune:");
+        frame.render_widget(title, layout[0]);
+
+        // Options
+        let options = vec![
+            (0, dialog.containers, "Containers (stopped)"),
+            (1, dialog.images, "Images (dangling)"),
+            (2, dialog.volumes, "Volumes (unused)"),
+            (3, dialog.networks, "Networks (unused)"),
+            (4, dialog.build_cache, "Build Cache"),
+            (5, dialog.containers && dialog.images && dialog.volumes && dialog.networks && dialog.build_cache, "Everything (select all)"),
+        ];
+
+        let options_lines: Vec<Line> = options
+            .into_iter()
+            .map(|(idx, checked, label)| {
+                let checkbox = if checked { "[✓]" } else { "[ ]" };
+                let style = if idx == dialog.selected_index {
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::White)
+                };
+                Line::from(vec![
+                    Span::styled(format!("{} ", checkbox), style),
+                    Span::styled(label, style),
+                ])
+            })
+            .collect();
+
+        let options_para = Paragraph::new(options_lines);
+        frame.render_widget(options_para, layout[2]);
+
+        // Buttons hint
+        let hint = Line::from(vec![
+            Span::styled("[", Style::default().fg(Color::Gray)),
+            Span::styled("Enter", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+            Span::styled("]Confirm [", Style::default().fg(Color::Gray)),
+            Span::styled("Esc", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+            Span::styled("]Cancel", Style::default().fg(Color::Gray)),
+        ]);
+        let hint_para = Paragraph::new(hint).alignment(ratatui::layout::Alignment::Center);
+        frame.render_widget(hint_para, layout[4]);
     }
 
     /// Render notification toast
@@ -1417,6 +1550,9 @@ Networks Tab:
   ↑/↓ or j/k       Select network
   d                Delete network
   p                Prune unused networks
+
+System Tab:
+  p                Prune unused resources (opens dialog)
 
 Log View:
   ↑/↓ or PgUp/PgDn Scroll

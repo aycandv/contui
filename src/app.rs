@@ -351,6 +351,9 @@ impl App {
             UiAction::Clear => {
                 // No-op: terminal clear is handled by the render cycle
             }
+            UiAction::PruneSystem => {
+                self.prune_system().await;
+            }
         }
     }
 
@@ -706,6 +709,94 @@ impl App {
                         NotificationLevel::Error,
                     );
                 }
+            }
+        }
+    }
+
+    /// Prune system resources based on selected options
+    async fn prune_system(&mut self) {
+        if let Some(client) = &self.docker_client {
+            if let Some(options) = self.state.get_prune_options() {
+                info!("Pruning system resources");
+                let mut total_reclaimed: i64 = 0;
+                let mut has_error = false;
+
+                // Prune containers
+                if options.containers {
+                    match client.prune_containers_detailed().await {
+                        Ok(result) => {
+                            total_reclaimed += result.space_reclaimed;
+                            info!("Pruned {} containers", result.items_deleted.len());
+                        }
+                        Err(e) => {
+                            error!("Failed to prune containers: {}", e);
+                            has_error = true;
+                        }
+                    }
+                }
+
+                // Prune images
+                if options.images {
+                    match client.prune_images().await {
+                        Ok(reclaimed) => {
+                            total_reclaimed += reclaimed as i64;
+                            info!("Pruned images, reclaimed {} bytes", reclaimed);
+                        }
+                        Err(e) => {
+                            error!("Failed to prune images: {}", e);
+                            has_error = true;
+                        }
+                    }
+                }
+
+                // Prune volumes
+                if options.volumes {
+                    match client.prune_volumes().await {
+                        Ok(reclaimed) => {
+                            total_reclaimed += reclaimed as i64;
+                            info!("Pruned volumes, reclaimed {} bytes", reclaimed);
+                        }
+                        Err(e) => {
+                            error!("Failed to prune volumes: {}", e);
+                            has_error = true;
+                        }
+                    }
+                }
+
+                // Prune networks
+                if options.networks {
+                    match client.prune_networks().await {
+                        Ok(count) => {
+                            info!("Pruned {} networks", count);
+                        }
+                        Err(e) => {
+                            error!("Failed to prune networks: {}", e);
+                            has_error = true;
+                        }
+                    }
+                }
+
+                // Build cache pruning is not available in bollard 0.18
+                if options.build_cache {
+                    info!("Build cache pruning not available in this version");
+                }
+
+                // Show notification
+                let size_str = crate::docker::format_bytes_size(total_reclaimed);
+                if has_error {
+                    self.state.add_notification(
+                        format!("Pruned resources, reclaimed {} (some errors occurred)", size_str),
+                        NotificationLevel::Warning,
+                    );
+                } else {
+                    self.state.add_notification(
+                        format!("Pruned resources, reclaimed {}", size_str),
+                        NotificationLevel::Success,
+                    );
+                }
+
+                // Refresh data to show updated disk usage
+                self.refresh_data().await;
             }
         }
     }

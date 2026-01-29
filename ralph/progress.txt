@@ -2,8 +2,8 @@
 
 ## Status
 - Total Stories: 5
-- Completed: 2
-- Current Story: US-018-3
+- Completed: 5
+- Current Story: None - All complete!
 
 ## Completed Stories
 
@@ -13,24 +13,31 @@
 - Added format_bytes_size() for human-readable formatting
 
 ### US-018-2: Render system tab with disk usage display ✅
-- Added disk_usage field to AppState
-- Created render_system_tab() method with proper layout
+- Added disk_usage field to AppState with update method
+- Created render_system_tab() with proper layout
 - Shows Docker version, API version, OS/Arch
 - Shows disk usage for images, containers, volumes, build cache
 - Shows total and reclaimable space with percentage
 - Added [p]Prune hint at bottom
 - Auto-fetches disk usage during refresh_data()
 
-## In Progress
-None - ready for next story
+### US-018-3: Add prune dialog with checkboxes ✅
+- Added PruneDialogState with containers, images, volumes, networks, build_cache options
+- Added navigation methods (prev, next, toggle)
+- Created render_prune_dialog() with checkbox UI
+- Added 'p' key handler on System tab to open dialog
+- Added handle_prune_dialog_key() for dialog key handling
 
-## Remaining Stories
+### US-018-4: Implement prune operations ✅
+- Added PruneSystem to UiAction
+- Implemented prune_system() method in App
+- Executes selected prune operations sequentially
+- Shows notification with total reclaimed space
+- Refreshes data after prune completes
 
-### US-018-3: Add prune dialog with checkboxes
-Status: NOT STARTED
+### US-018-5: Update help text with new keybindings ✅
+- Added "System Tab" section to help overlay
+- Documented 'p' key for prune dialog
 
-### US-018-4: Implement prune operations
-Status: NOT STARTED
-
-### US-018-5: Update help text with new keybindings
-Status: NOT STARTED
+## Summary
+All user stories for US-018 completed successfully!

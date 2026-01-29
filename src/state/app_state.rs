@@ -6,7 +6,7 @@ use crate::core::{
     ConfirmAction, ConnectionInfo, ContainerSummary, ImageSummary, NetworkSummary,
     NotificationLevel, Tab, VolumeSummary,
 };
-use crate::docker::SystemDiskUsage;
+use crate::docker::{PruneOptions, SystemDiskUsage};
 
 /// Main application state
 #[derive(Debug, Clone)]
@@ -54,6 +54,9 @@ pub struct AppState {
 
     // Image detail view state
     pub image_detail_view: Option<ImageDetailViewState>,
+
+    // Prune dialog state
+    pub prune_dialog: Option<PruneDialogState>,
 
     // Async operations tracking
     pub loading: bool,
@@ -116,6 +119,36 @@ pub struct ImageDetailViewState {
     pub scroll_offset: usize,
 }
 
+/// Prune dialog state
+#[derive(Debug, Clone)]
+pub struct PruneDialogState {
+    /// Whether to prune containers
+    pub containers: bool,
+    /// Whether to prune images
+    pub images: bool,
+    /// Whether to prune volumes
+    pub volumes: bool,
+    /// Whether to prune networks
+    pub networks: bool,
+    /// Whether to prune build cache
+    pub build_cache: bool,
+    /// Currently selected option (0-4 for individual, 5 for everything)
+    pub selected_index: usize,
+}
+
+impl Default for PruneDialogState {
+    fn default() -> Self {
+        Self {
+            containers: false,
+            images: true,  // Default to pruning dangling images
+            volumes: false,
+            networks: false,
+            build_cache: false,
+            selected_index: 0,
+        }
+    }
+}
+
 /// Panel focus areas
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Panel {
@@ -161,6 +194,7 @@ impl AppState {
             stats_view: None,
             detail_view: None,
             image_detail_view: None,
+            prune_dialog: None,
             confirm_dialog: None,
             loading: false,
         }
@@ -693,6 +727,68 @@ impl AppState {
         if let Some(image_detail_view) = &mut self.image_detail_view {
             image_detail_view.scroll_offset += amount;
         }
+    }
+
+    /// Open prune dialog
+    pub fn open_prune_dialog(&mut self) {
+        self.prune_dialog = Some(PruneDialogState::default());
+    }
+
+    /// Close prune dialog
+    pub fn close_prune_dialog(&mut self) {
+        self.prune_dialog = None;
+    }
+
+    /// Navigate up in prune dialog
+    pub fn prune_dialog_prev(&mut self) {
+        if let Some(dialog) = &mut self.prune_dialog {
+            if dialog.selected_index > 0 {
+                dialog.selected_index -= 1;
+            }
+        }
+    }
+
+    /// Navigate down in prune dialog
+    pub fn prune_dialog_next(&mut self) {
+        if let Some(dialog) = &mut self.prune_dialog {
+            if dialog.selected_index < 5 {
+                dialog.selected_index += 1;
+            }
+        }
+    }
+
+    /// Toggle current option in prune dialog
+    pub fn prune_dialog_toggle(&mut self) {
+        if let Some(dialog) = &mut self.prune_dialog {
+            match dialog.selected_index {
+                0 => dialog.containers = !dialog.containers,
+                1 => dialog.images = !dialog.images,
+                2 => dialog.volumes = !dialog.volumes,
+                3 => dialog.networks = !dialog.networks,
+                4 => dialog.build_cache = !dialog.build_cache,
+                5 => {
+                    // Toggle everything
+                    let all = !(dialog.containers && dialog.images && dialog.volumes && dialog.networks && dialog.build_cache);
+                    dialog.containers = all;
+                    dialog.images = all;
+                    dialog.volumes = all;
+                    dialog.networks = all;
+                    dialog.build_cache = all;
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// Get prune options from dialog
+    pub fn get_prune_options(&self) -> Option<PruneOptions> {
+        self.prune_dialog.as_ref().map(|dialog| PruneOptions {
+            containers: dialog.containers,
+            images: dialog.images,
+            volumes: dialog.volumes,
+            networks: dialog.networks,
+            build_cache: dialog.build_cache,
+        })
     }
 }
 

@@ -14,4 +14,4 @@ pub use image_inspect::{format_signed_size, format_size, ImageDetails};
 pub use inspect::ContainerDetails;
 pub use logs::LogEntry;
 pub use stats::{format_bytes, StatsEntry};
-pub use system::{format_bytes_size, PruneResult, SystemDiskUsage, SystemInfo};
+pub use system::{format_bytes_size, PruneOptions, PruneResult, SystemDiskUsage, SystemInfo};

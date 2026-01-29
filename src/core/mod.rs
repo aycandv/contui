@@ -253,6 +253,8 @@ pub enum UiAction {
     ExportLogs,
     /// Clear terminal screen (to prevent ghost text)
     Clear,
+    /// Prune system resources (containers, images, volumes, networks, build cache)
+    PruneSystem,
 }
 
 /// Confirmation dialog action
