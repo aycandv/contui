@@ -4,11 +4,14 @@ on:
   push:
     branches:
       - main
-      - master
   pull_request:
     branches:
       - main
-      - master
+
+# Prevent duplicate runs
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
@@ -44,8 +47,11 @@ jobs:
     - name: Run tests
       run: cargo test --verbose
 
+  # Cross-platform build verification (only for PRs, not main pushes)
+  # Main branch builds are handled by the Release workflow
   build:
     name: Build ${{ matrix.os }}
+    if: github.event_name == 'pull_request'
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -55,6 +61,15 @@ jobs:
 
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache cargo dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
     - name: Build release
       run: cargo build --release --verbose
