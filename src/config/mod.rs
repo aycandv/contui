@@ -30,7 +30,7 @@ impl Config {
     pub fn load_default() -> Result<Self> {
         use directories::ProjectDirs;
 
-        if let Some(proj_dirs) = ProjectDirs::from("com", "dockmon", "dockmon") {
+        if let Some(proj_dirs) = ProjectDirs::from("com", "contui", "contui") {
             let config_dir = proj_dirs.config_dir();
             let config_path = config_dir.join("config.toml");
 

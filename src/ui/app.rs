@@ -1112,7 +1112,7 @@ impl UiApp {
 
         let header_spans = vec![
             Span::styled(
-                " 🐳 DockMon ",
+                " 🐳 Contui ",
                 Style::default()
                     .fg(Color::Cyan)
                     .add_modifier(Modifier::BOLD),

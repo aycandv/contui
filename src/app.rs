@@ -11,7 +11,7 @@ use std::time::Duration;
 use tracing::{debug, error, info, warn};
 
 use crate::config::Config;
-use crate::core::{ConnectionInfo, NotificationLevel, Result as DockMonResult};
+use crate::core::{ConnectionInfo, NotificationLevel, Result as ContuiResult};
 use crate::docker::{DockerClient, LogEntry};
 use crate::state::AppState;
 use crate::ui::{UiAction, UiApp};
@@ -24,11 +24,11 @@ pub struct App {
     state: AppState,
     docker_client: Option<DockerClient>,
     /// Channel receiver for log fetch results
-    log_fetch_rx: Option<mpsc::Receiver<DockMonResult<Vec<LogEntry>>>>,
+    log_fetch_rx: Option<mpsc::Receiver<ContuiResult<Vec<LogEntry>>>>,
     /// Last time we auto-fetched logs (for follow mode)
     last_log_fetch: Option<std::time::Instant>,
     /// Channel receiver for stats fetch results
-    stats_fetch_rx: Option<mpsc::Receiver<DockMonResult<crate::docker::StatsEntry>>>,
+    stats_fetch_rx: Option<mpsc::Receiver<ContuiResult<crate::docker::StatsEntry>>>,
     /// Last time we auto-fetched stats (for follow mode)
     last_stats_fetch: Option<std::time::Instant>,
 }

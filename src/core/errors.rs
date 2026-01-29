@@ -1,8 +1,8 @@
 use thiserror::Error;
 
-/// Main error type for DockMon
+/// Main error type for Contui
 #[derive(Error, Debug)]
-pub enum DockMonError {
+pub enum ContuiError {
     /// Docker API errors
     #[error("Docker error: {0}")]
     Docker(#[from] DockerError),
@@ -109,28 +109,28 @@ pub enum ConfigError {
 }
 
 /// Result type alias
-pub type Result<T> = std::result::Result<T, DockMonError>;
+pub type Result<T> = std::result::Result<T, ContuiError>;
 
-impl DockMonError {
+impl ContuiError {
     /// Check if this error is retryable
     pub fn is_retryable(&self) -> bool {
         matches!(
             self,
-            DockMonError::Docker(DockerError::Connection(_))
-                | DockMonError::Docker(DockerError::Timeout { .. })
+            ContuiError::Docker(DockerError::Connection(_))
+                | ContuiError::Docker(DockerError::Timeout { .. })
         )
     }
 
     /// Get a user-friendly error message
     pub fn user_message(&self) -> String {
         match self {
-            DockMonError::Docker(DockerError::Connection(_)) => {
+            ContuiError::Docker(DockerError::Connection(_)) => {
                 "Could not connect to Docker. Please ensure Docker is running.".to_string()
             }
-            DockMonError::Docker(DockerError::PermissionDenied) => {
+            ContuiError::Docker(DockerError::PermissionDenied) => {
                 "Permission denied. Please check your Docker permissions.".to_string()
             }
-            DockMonError::Config(ConfigError::NotFound(_)) => {
+            ContuiError::Config(ConfigError::NotFound(_)) => {
                 "Configuration file not found. Using defaults.".to_string()
             }
             _ => self.to_string(),
@@ -138,15 +138,15 @@ impl DockMonError {
     }
 }
 
-impl From<toml::de::Error> for DockMonError {
+impl From<toml::de::Error> for ContuiError {
     fn from(err: toml::de::Error) -> Self {
-        DockMonError::Config(ConfigError::Parse(err.to_string()))
+        ContuiError::Config(ConfigError::Parse(err.to_string()))
     }
 }
 
-impl From<toml::ser::Error> for DockMonError {
+impl From<toml::ser::Error> for ContuiError {
     fn from(err: toml::ser::Error) -> Self {
-        DockMonError::Config(ConfigError::Parse(err.to_string()))
+        ContuiError::Config(ConfigError::Parse(err.to_string()))
     }
 }
 
@@ -165,10 +165,10 @@ mod tests {
     #[test]
     fn test_retryable_errors() {
         let connection_err =
-            DockMonError::Docker(DockerError::Connection("connection refused".to_string()));
+            ContuiError::Docker(DockerError::Connection("connection refused".to_string()));
         assert!(connection_err.is_retryable());
 
-        let not_found_err = DockMonError::Docker(DockerError::NotFound {
+        let not_found_err = ContuiError::Docker(DockerError::NotFound {
             resource: "test".to_string(),
         });
         assert!(!not_found_err.is_retryable());
@@ -176,7 +176,7 @@ mod tests {
 
     #[test]
     fn test_user_messages() {
-        let conn_err = DockMonError::Docker(DockerError::Connection("test".to_string()));
+        let conn_err = ContuiError::Docker(DockerError::Connection("test".to_string()));
         let msg = conn_err.user_message();
         assert!(msg.contains("Docker"));
     }
@@ -184,7 +184,7 @@ mod tests {
     #[test]
     fn test_error_conversion() {
         let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
-        let dockmon_err: DockMonError = io_err.into();
-        assert!(matches!(dockmon_err, DockMonError::Io(_)));
+        let contui_err: ContuiError = io_err.into();
+        assert!(matches!(contui_err, ContuiError::Io(_)));
     }
 }

@@ -2,14 +2,14 @@ use anyhow::Result;
 use clap::Parser;
 use tracing::{info, warn};
 
-use dockmon::app::App;
-use dockmon::config::Config;
-use dockmon::core::ConnectionInfo;
-use dockmon::docker::DockerClient;
+use contui::app::App;
+use contui::config::Config;
+use contui::core::ConnectionInfo;
+use contui::docker::DockerClient;
 
-/// DockMon - Advanced Docker TUI
+/// Contui - Advanced Docker TUI
 #[derive(Parser, Debug)]
-#[command(name = "dockmon")]
+#[command(name = "contui")]
 #[command(about = "A terminal UI for Docker management")]
 #[command(version)]
 struct Cli {
@@ -41,12 +41,12 @@ async fn main() -> Result<()> {
     let log_file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open("/tmp/dockmon.log")
+        .open("/tmp/contui.log")
         .ok();
 
     if let Some(file) = log_file {
         tracing_subscriber::fmt()
-            .with_env_filter(format!("dockmon={}", log_level))
+            .with_env_filter(format!("contui={}", log_level))
             .with_writer(std::sync::Arc::new(file))
             .init();
     } else {
@@ -54,7 +54,7 @@ async fn main() -> Result<()> {
         tracing_subscriber::fmt().with_env_filter("off").init();
     }
 
-    info!("Starting DockMon v{}", env!("CARGO_PKG_VERSION"));
+    info!("Starting Contui v{}", env!("CARGO_PKG_VERSION"));
 
     // Load configuration
     let config = match &cli.config {
@@ -87,7 +87,7 @@ async fn main() -> Result<()> {
     let mut app = App::new(config).await?;
     app.run().await?;
 
-    info!("DockMon shutting down gracefully");
+    info!("Contui shutting down gracefully");
     Ok(())
 }
 

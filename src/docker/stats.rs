@@ -6,7 +6,7 @@ use std::time::Duration;
 use tokio::time::timeout;
 use tracing::{debug, error};
 
-use crate::core::{DockMonError, DockerError, Result};
+use crate::core::{ContuiError, DockerError, Result};
 use crate::docker::DockerClient;
 
 /// Container stats entry
@@ -37,7 +37,7 @@ impl DockerClient {
         stream.map(|result| {
             result
                 .map_err(|e| {
-                    DockMonError::Docker(DockerError::Container(format!(
+                    ContuiError::Docker(DockerError::Container(format!(
                         "Failed to read stats: {}",
                         e
                     )))
@@ -65,20 +65,20 @@ impl DockerClient {
             }
             Ok(Some(Err(e))) => {
                 error!("Error reading stats for container {}: {}", id, e);
-                Err(DockMonError::Docker(DockerError::Container(format!(
+                Err(ContuiError::Docker(DockerError::Container(format!(
                     "Failed to read stats: {}",
                     e
                 ))))
             }
             Ok(None) => {
                 error!("Stats stream ended unexpectedly for container {}", id);
-                Err(DockMonError::Docker(DockerError::Container(
+                Err(ContuiError::Docker(DockerError::Container(
                     "Stats stream ended unexpectedly".to_string(),
                 )))
             }
             Err(_) => {
                 error!("Timeout waiting for stats for container {}", id);
-                Err(DockMonError::Docker(DockerError::Container(
+                Err(ContuiError::Docker(DockerError::Container(
                     "Timeout waiting for stats".to_string(),
                 )))
             }

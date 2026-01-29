@@ -1,5 +1,5 @@
 {
-  "project": "DockMon",
+  "project": "Contui",
   "branchName": "ralph/US-018-system-disk-usage",
   "description": "System Disk Usage and Prune - View disk usage breakdown and clean up unused Docker resources",
   "userStories": [

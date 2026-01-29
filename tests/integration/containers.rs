@@ -1,6 +1,6 @@
 //! Container operations integration tests
 
-use dockmon::docker::DockerClient;
+use contui::docker::DockerClient;
 
 #[tokio::test]
 #[ignore = "requires Docker daemon"]
@@ -35,7 +35,7 @@ async fn test_list_running_containers() {
     for container in &containers {
         assert_eq!(
             container.state,
-            dockmon::core::ContainerState::Running,
+            contui::core::ContainerState::Running,
             "Container {} should be running",
             container.id
         );

@@ -90,7 +90,7 @@ impl DockerClient {
         follow: bool,
         tail: usize,
     ) -> impl futures::Stream<Item = Result<LogEntry>> + '_ {
-        use crate::core::DockMonError;
+        use crate::core::ContuiError;
 
         let options = LogsOptions {
             stdout: true,
@@ -106,7 +106,7 @@ impl DockerClient {
         stream.map(|result| {
             result
                 .map_err(|e| {
-                    DockMonError::Docker(DockerError::Container(format!(
+                    ContuiError::Docker(DockerError::Container(format!(
                         "Failed to read logs: {}",
                         e
                     )))
@@ -117,7 +117,7 @@ impl DockerClient {
 
     /// Parse a log entry from bollard
     fn parse_log_entry(log: bollard::container::LogOutput) -> crate::core::Result<LogEntry> {
-        use crate::core::{DockMonError, DockerError};
+        use crate::core::{ContuiError, DockerError};
 
         // Extract message from log output
         // Note: bollard returns Console for both stdout and stderr when timestamps are enabled
@@ -132,7 +132,7 @@ impl DockerClient {
                 String::from_utf8_lossy(&message).to_string()
             }
             _ => {
-                return Err(DockMonError::Docker(DockerError::Container(
+                return Err(ContuiError::Docker(DockerError::Container(
                     "Unknown log output type".to_string(),
                 )));
             }

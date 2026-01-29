@@ -1,6 +1,6 @@
 //! Docker container inspection
 
-use crate::core::{DockMonError, DockerError, Result};
+use crate::core::{ContuiError, DockerError, Result};
 use crate::docker::DockerClient;
 
 /// Container details from inspect
@@ -71,7 +71,7 @@ impl DockerClient {
             .inspect_container(id, None)
             .await
             .map_err(|e| {
-                DockMonError::Docker(DockerError::Container(format!("Failed to inspect: {}", e)))
+                ContuiError::Docker(DockerError::Container(format!("Failed to inspect: {}", e)))
             })?;
 
         // Extract state

@@ -1,21 +1,21 @@
 [package]
-name = "dockmon"
+name = "contui"
 version = "0.1.0"
 edition = "2021"
-authors = ["DockMon Contributors"]
-description = "Advanced Docker TUI for container monitoring and management"
+authors = ["Contui Contributors"]
+description = "A powerful terminal UI for Docker container management"
 license = "MIT"
-repository = "https://github.com/yourusername/dockmon"
+repository = "https://github.com/yourusername/contui"
 keywords = ["docker", "tui", "containers", "monitoring", "ratatui"]
 categories = ["command-line-utilities", "development-tools"]
 rust-version = "1.70"
 
 [lib]
-name = "dockmon"
+name = "contui"
 path = "src/lib.rs"
 
 [[bin]]
-name = "dockmon"
+name = "contui"
 path = "src/main.rs"
 
 [dependencies]

@@ -1,6 +1,6 @@
 //! Docker image inspection
 
-use crate::core::{DockMonError, DockerError, Result};
+use crate::core::{ContuiError, DockerError, Result};
 use crate::docker::DockerClient;
 
 /// Image details from inspect
@@ -38,12 +38,12 @@ impl DockerClient {
         debug!("Inspecting image {}", id);
 
         let inspect = self.inner().inspect_image(id).await.map_err(|e| {
-            DockMonError::Docker(DockerError::Image(format!("Failed to inspect: {}", e)))
+            ContuiError::Docker(DockerError::Image(format!("Failed to inspect: {}", e)))
         })?;
 
         // Get history for layers
         let history = self.inner().image_history(id).await.map_err(|e| {
-            DockMonError::Docker(DockerError::Image(format!("Failed to get history: {}", e)))
+            ContuiError::Docker(DockerError::Image(format!("Failed to get history: {}", e)))
         })?;
 
         // Extract repo tags

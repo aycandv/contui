@@ -1,4 +1,4 @@
-//! DockMon - Advanced Docker TUI
+//! Contui - Advanced Docker TUI
 //!
 //! A terminal user interface for Docker management built with Rust.
 
