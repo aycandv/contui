@@ -82,7 +82,11 @@ async fn main() -> Result<()> {
 
 fn print_version() {
     println!("contui {}", env!("CARGO_PKG_VERSION"));
-    println!("Platform: {} {}", std::env::consts::OS, std::env::consts::ARCH);
+    println!(
+        "Platform: {} {}",
+        std::env::consts::OS,
+        std::env::consts::ARCH
+    );
     println!("Repository: https://github.com/aycandv/contui");
 }
 
@@ -90,7 +94,7 @@ async fn check_for_updates() -> Result<()> {
     println!("Checking for updates...");
 
     let current_version = env!("CARGO_PKG_VERSION");
-    
+
     match get_latest_version().await {
         Ok(latest_version) => {
             if latest_version == current_version {
@@ -106,13 +110,13 @@ async fn check_for_updates() -> Result<()> {
             std::process::exit(1);
         }
     }
-    
+
     Ok(())
 }
 
 async fn update_self() -> Result<()> {
-    use self_update::cargo_crate_version;
     use self_update::backends::github::Update;
+    use self_update::cargo_crate_version;
 
     println!("Checking for updates...");
 
@@ -133,7 +137,10 @@ async fn update_self() -> Result<()> {
         println!("\n✓ Successfully updated to v{}", status.version());
         println!("  Previous version: v{}", current_version);
     } else {
-        println!("\n✓ You're already on the latest version (v{})", current_version);
+        println!(
+            "\n✓ You're already on the latest version (v{})",
+            current_version
+        );
     }
 
     Ok(())
@@ -141,31 +148,30 @@ async fn update_self() -> Result<()> {
 
 async fn uninstall_self(purge: bool) -> Result<()> {
     let exe_path = std::env::current_exe()?;
-    
+
     println!("This will remove contui from your system.");
     println!("Binary location: {}", exe_path.display());
-    
+
     if purge {
         let config_dir = directories::ProjectDirs::from("com", "contui", "contui")
             .map(|d| d.config_dir().to_path_buf())
             .or_else(|| {
-                std::env::var_os("HOME")
-                    .map(|h| std::path::PathBuf::from(h).join(".config/contui"))
+                std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".config/contui"))
             });
-        
+
         if let Some(ref dir) = config_dir {
             println!("Configuration directory: {}", dir.display());
         }
     }
-    
+
     println!();
     print!("Are you sure? [y/N] ");
     use std::io::Write;
     std::io::stdout().flush()?;
-    
+
     let mut input = String::new();
     std::io::stdin().read_line(&mut input)?;
-    
+
     if !input.trim().eq_ignore_ascii_case("y") {
         println!("Uninstall cancelled.");
         return Ok(());
@@ -175,14 +181,14 @@ async fn uninstall_self(purge: bool) -> Result<()> {
     println!("\nRemoving {}...", exe_path.display());
     if let Err(e) = std::fs::remove_file(&exe_path) {
         eprintln!("✗ Failed to remove binary: {}", e);
-        
+
         // On Unix, if the binary is running, we might need to use a different approach
         #[cfg(unix)]
         {
             eprintln!("  The binary may be in use. Try running:");
             eprintln!("  rm '{}'", exe_path.display());
         }
-        
+
         return Err(e.into());
     }
 
@@ -191,9 +197,9 @@ async fn uninstall_self(purge: bool) -> Result<()> {
         if let Some(config_dir) = directories::ProjectDirs::from("com", "contui", "contui")
             .map(|d| d.config_dir().to_path_buf())
             .or_else(|| {
-                std::env::var_os("HOME")
-                    .map(|h| std::path::PathBuf::from(h).join(".config/contui"))
-            }) {
+                std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".config/contui"))
+            })
+        {
             if config_dir.exists() {
                 println!("Removing {}...", config_dir.display());
                 if let Err(e) = std::fs::remove_dir_all(&config_dir) {
@@ -206,14 +212,14 @@ async fn uninstall_self(purge: bool) -> Result<()> {
     }
 
     println!("\n✓ Successfully uninstalled contui.");
-    
+
     if !purge {
         if let Some(config_dir) = directories::ProjectDirs::from("com", "contui", "contui")
             .map(|d| d.config_dir().to_path_buf())
             .or_else(|| {
-                std::env::var_os("HOME")
-                    .map(|h| std::path::PathBuf::from(h).join(".config/contui"))
-            }) {
+                std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".config/contui"))
+            })
+        {
             println!("\nTo also remove configuration files:");
             println!("  rm -rf '{}'", config_dir.display());
         }
@@ -238,7 +244,7 @@ async fn get_latest_version() -> Result<String> {
     let tag = release["tag_name"]
         .as_str()
         .ok_or_else(|| anyhow::anyhow!("Could not parse version from GitHub response"))?;
-    
+
     // Remove 'v' prefix if present
     Ok(tag.trim_start_matches('v').to_string())
 }
