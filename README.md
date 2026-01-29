@@ -10,7 +10,7 @@
 
 A powerful, fast, and intuitive Terminal User Interface (TUI) for Docker container management. Contui provides real-time monitoring, log streaming, resource statistics, and full container lifecycle management - all from your terminal.
 
-![Contui Screenshot](docs/screenshot.png)
+![Contui Demo](assets/demo.gif)
 
 ## Features
 
