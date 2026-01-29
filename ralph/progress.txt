@@ -1,34 +1,29 @@
-# Ralph Progress: US-013 Log Search and Filtering
+# Ralph Progress: US-018 System Disk Usage and Prune
 
 ## Status
-- Total Stories: 4
-- Completed: 2
-- Current Story: US-013-3
+- Total Stories: 5
+- Completed: 0
+- Current Story: US-018-1
 
 ## Completed Stories
-
-### US-013-1: Add log search input and highlight matches ✅
-- Search input rendering at bottom of log view
-- Character input handling (typing, backspace)
-- Matching lines highlighted in yellow
-- Current match highlighted in magenta
-- Match counter shown (e.g., "3/15")
-- Keybindings: '/', 'n', 'N', 'Esc', 'Enter'
-
-### US-013-2: Add log level filtering ✅
-- LogLevelFilter enum: All, Error, Warn, Info
-- Auto-detect level from message (ERROR, WARN, INFO, etc.)
-- Keybindings: 0=All, 1=Error, 2=Warn, 3=Info
-- Filter state shown in title: "Logs: [ERROR] container_name"
-- Scroll resets to top when filter changes
+None yet - starting fresh
 
 ## In Progress
-None - ready for next story
+None - ready to start
 
 ## Remaining Stories
 
-### US-013-3: Add timestamp filtering
+### US-018-1: Add system disk usage data structures and Docker API methods
 Status: NOT STARTED
 
-### US-013-4: Export logs to file
+### US-018-2: Render system tab with disk usage display
+Status: NOT STARTED
+
+### US-018-3: Add prune dialog with checkboxes
+Status: NOT STARTED
+
+### US-018-4: Implement prune operations
+Status: NOT STARTED
+
+### US-018-5: Update help text with new keybindings
 Status: NOT STARTED

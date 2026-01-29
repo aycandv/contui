@@ -1,39 +1,39 @@
 {
   "project": "DockMon",
-  "branchName": "ralph/US-013-log-search",
-  "description": "Log Search and Filtering - Search, filter, and highlight logs with regex support",
+  "branchName": "ralph/US-018-system-disk-usage",
+  "description": "System Disk Usage and Prune - View disk usage breakdown and clean up unused Docker resources",
   "userStories": [
     {
-      "id": "US-013-1",
-      "title": "Add log search input and highlight matches",
-      "description": "As a developer, I want to search logs with regex and see matches highlighted so I can find specific events quickly.",
+      "id": "US-018-1",
+      "title": "Add system disk usage data structures and Docker API methods",
+      "description": "As a developer, I need data structures and API methods to fetch and represent disk usage data from Docker.",
       "acceptanceCriteria": [
-        "Press '/' in log view to open search input (like vim)",
-        "Search input appears at bottom of log view",
-        "Type pattern and press Enter to search (case-insensitive)",
-        "Matching lines are highlighted in yellow",
-        "Press 'n' to jump to next match, 'N' for previous",
-        "Press 'Esc' to clear search and close input",
-        "Show match counter: '3/15' in search bar",
-        "Search updates as new logs arrive",
+        "Create SystemDiskUsage struct with fields for images, containers, volumes, build cache",
+        "Each category has total size and reclaimable size",
+        "Add df() method to Docker client that calls bollard's system df API",
+        "Parse SystemDataUsageResponse from bollard into our SystemDiskUsage struct",
+        "Add human-readable formatting for sizes (MB, GB, TB)",
         "Typecheck passes"
       ],
       "priority": 1,
       "passes": false,
-      "notes": "State management done. Ralph: implement search input rendering, character input handling, match highlighting."
+      "notes": ""
     },
     {
-      "id": "US-013-2",
-      "title": "Add log level filtering",
-      "description": "As a developer, I want to filter logs by level (INFO, WARN, ERROR) to focus on important messages.",
+      "id": "US-018-2",
+      "title": "Render system tab with disk usage display",
+      "description": "As a user, I want to see disk usage breakdown in the System tab so I can understand what's using space.",
       "acceptanceCriteria": [
-        "Press '1' to show only ERROR logs",
-        "Press '2' to show only WARN logs", 
-        "Press '3' to show only INFO logs",
-        "Press '0' to show all logs (default)",
-        "Filter state shown in log view title: 'Logs: [ERROR] container_name'",
-        "Auto-detect log levels from message content (contains 'ERROR:', 'WARN:', etc.)",
-        "Filter applies to existing logs in memory",
+        "Update System tab rendering to show disk usage section",
+        "Display Docker version, API version, OS/Arch, Kernel version",
+        "Display Images: total size and reclaimable size",
+        "Display Containers: total size and reclaimable size",
+        "Display Local Volumes: total size and reclaimable size",
+        "Display Build Cache: total size and reclaimable size",
+        "Show grand total and total reclaimable",
+        "Show reclaimable percentage",
+        "Show '[p]Prune unused resources' hint at bottom",
+        "Fetch disk usage data when tab is selected",
         "Typecheck passes"
       ],
       "priority": 2,
@@ -41,15 +41,17 @@
       "notes": ""
     },
     {
-      "id": "US-013-3",
-      "title": "Add timestamp filtering",
-      "description": "As a developer, I want to filter logs by time range to investigate issues from specific periods.",
+      "id": "US-018-3",
+      "title": "Add prune dialog with checkboxes",
+      "description": "As a user, I want a dialog to select which resources to prune before cleaning up.",
       "acceptanceCriteria": [
-        "Press 't' in log view to open time filter input",
-        "Input accepts '5m' (last 5 minutes), '1h' (last hour), or ISO timestamp",
-        "Only show logs newer than the specified time",
-        "Show 'Time filter: 5m' in log view title",
-        "Press 'T' to clear time filter",
+        "Press 'p' on System tab to open prune dialog",
+        "Dialog shows centered popup with checkboxes",
+        "Options: Containers (stopped), Images (dangling), Volumes (unused), Networks (unused), Build Cache",
+        "'Everything' checkbox that selects/deselects all",
+        "Navigate options with ↑/↓ arrow keys",
+        "Toggle checkbox with Space or Enter",
+        "Confirm with Enter, cancel with Esc or 'q'",
         "Typecheck passes"
       ],
       "priority": 3,
@@ -57,18 +59,34 @@
       "notes": ""
     },
     {
-      "id": "US-013-4",
-      "title": "Export logs to file",
-      "description": "As a developer, I want to save filtered logs to a file for analysis or sharing.",
+      "id": "US-018-4",
+      "title": "Implement prune operations",
+      "description": "As a user, I want to actually prune the selected resources and see how much space was reclaimed.",
       "acceptanceCriteria": [
-        "Press 'S' (shift+s) in log view to save logs",
-        "Prompt for filename (default: 'container_name_YYYY-MM-DD_HH-MM-SS.log')",
-        "Save currently visible (filtered) logs to file",
-        "Show confirmation: 'Saved 150 lines to container_name_... .log'",
-        "File saved in current directory",
+        "Add prune methods to Docker client: prune_containers, prune_images, prune_volumes, prune_networks, prune_build_cache",
+        "When prune dialog is confirmed, execute selected prune operations",
+        "Show confirmation dialog before executing prune",
+        "Show progress/notification during prune",
+        "Calculate total reclaimed space from all prune results",
+        "Show success notification: 'Reclaimed 2.3 GB'",
+        "Refresh disk usage display after prune completes",
         "Typecheck passes"
       ],
       "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-018-5",
+      "title": "Update help text with new keybindings",
+      "description": "As a user, I need to know about the new System tab keybindings.",
+      "acceptanceCriteria": [
+        "Add 'System Tab' section to help overlay",
+        "Document 'p' key for prune dialog",
+        "Update System tab placeholder text to show actual functionality",
+        "Typecheck passes"
+      ],
+      "priority": 5,
       "passes": false,
       "notes": ""
     }
