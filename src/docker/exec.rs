@@ -47,6 +47,10 @@ pub fn select_exec_command(entrypoint: &[String], cmd: &[String]) -> Vec<String>
         if out.is_empty() {
             return vec!["/bin/sh".to_string(), "-lc".to_string()];
         }
+        // Ensure interactive shell if no arguments provided
+        if out.len() == 1 && !out.iter().any(|c| c == "-i" || c == "-c" || c == "-lc") {
+            out.push("-i".to_string());
+        }
         out
     } else {
         vec!["/bin/sh".to_string(), "-lc".to_string()]
@@ -165,6 +169,13 @@ mod tests {
         let cmd = vec!["echo".to_string(), "hi".to_string()];
         let selected = select_exec_command(&entrypoint, &cmd);
         assert_eq!(selected, vec!["/bin/sh", "-lc", "echo", "hi"]);
+    }
+
+    #[test]
+    fn adds_interactive_flag_when_only_shell() {
+        let entrypoint = vec!["/bin/sh".to_string()];
+        let selected = select_exec_command(&entrypoint, &[]);
+        assert_eq!(selected, vec!["/bin/sh", "-i"]);
     }
 
     #[test]
