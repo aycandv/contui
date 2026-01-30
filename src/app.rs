@@ -8,14 +8,17 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 use std::io;
 use std::time::Duration;
+use std::pin::Pin;
 use tracing::{debug, error, info, warn};
 
 use crate::config::Config;
 use crate::core::{ConnectionInfo, NotificationLevel, Result as ContuiResult};
-use crate::docker::{DockerClient, LogEntry};
+use crate::docker::{select_exec_command, DockerClient, LogEntry};
 use crate::state::AppState;
 use crate::ui::{UiAction, UiApp};
 use tokio::sync::mpsc;
+use tokio::io::AsyncWriteExt;
+use futures::StreamExt;
 
 /// Main application struct
 pub struct App {
@@ -31,6 +34,24 @@ pub struct App {
     stats_fetch_rx: Option<mpsc::Receiver<ContuiResult<crate::docker::StatsEntry>>>,
     /// Last time we auto-fetched stats (for follow mode)
     last_stats_fetch: Option<std::time::Instant>,
+    /// Exec runtime state
+    exec_runtime: Option<ExecRuntime>,
+    /// Track last terminal size for exec resize
+    last_terminal_size: Option<(u16, u16)>,
+}
+
+enum ExecOutput {
+    Bytes(Vec<u8>),
+    End,
+}
+
+struct ExecRuntime {
+    exec_id: String,
+    container_id: String,
+    input: Pin<Box<dyn tokio::io::AsyncWrite + Send>>,
+    parser: vt100::Parser,
+    output_rx: mpsc::Receiver<ExecOutput>,
+    size: (u16, u16),
 }
 
 impl App {
@@ -61,6 +82,8 @@ impl App {
             last_log_fetch: None,
             stats_fetch_rx: None,
             last_stats_fetch: None,
+            exec_runtime: None,
+            last_terminal_size: None,
         })
     }
 
@@ -202,6 +225,18 @@ impl App {
                     self.refresh_data().await;
                     last_data_refresh = std::time::Instant::now();
                 }
+
+                // Check for exec output
+                self.check_exec_output().await;
+
+                // Resize exec session if terminal size changed
+                if self.state.exec_view.is_some() {
+                    let current = self.state.terminal_size;
+                    if self.last_terminal_size != Some(current) {
+                        self.resize_exec_if_needed().await;
+                        self.last_terminal_size = Some(current);
+                    }
+                }
                 // Clear old notifications (older than 3 seconds)
                 self.state.clear_old_notifications(3);
                 last_tick = std::time::Instant::now();
@@ -312,14 +347,15 @@ impl App {
                     .add_notification("Loading details...", NotificationLevel::Info);
                 self.fetch_container_details(id).await;
             }
-            UiAction::ExecContainer(_) => {
-                // Wired in a later task
+            UiAction::ExecContainer(id) => {
+                self.start_exec_for_container(&id).await;
             }
-            UiAction::StartContainerAndExec(_) => {
-                // Wired in a later task
+            UiAction::StartContainerAndExec(id) => {
+                self.start_container(&id).await;
+                self.start_exec_for_container(&id).await;
             }
-            UiAction::ExecInput(_) => {
-                // Wired in a later task
+            UiAction::ExecInput(bytes) => {
+                self.write_exec_input(bytes).await;
             }
             UiAction::RemoveImage(id) => {
                 self.remove_image(&id).await;
@@ -1234,6 +1270,168 @@ impl App {
             }
         }
     }
+
+    // ==================== Exec Handling ====================
+
+    async fn start_exec_for_container(&mut self, id: &str) {
+        if let Some(runtime) = &self.exec_runtime {
+            if runtime.container_id == id {
+                self.state.close_exec_view();
+                self.exec_runtime = None;
+                return;
+            }
+            self.state.add_notification(
+                "Exec already active for another container",
+                NotificationLevel::Warning,
+            );
+            return;
+        }
+
+        let client = match &self.docker_client {
+            Some(client) => client,
+            None => {
+                self.state
+                    .add_notification("Docker not connected", NotificationLevel::Error);
+                return;
+            }
+        };
+
+        let defaults = match client.exec_defaults(id).await {
+            Ok(d) => d,
+            Err(e) => {
+                self.state.add_notification(
+                    format!("Failed to inspect container: {e}"),
+                    NotificationLevel::Error,
+                );
+                return;
+            }
+        };
+
+        if !defaults.running {
+            self.state.add_notification(
+                "Container is not running",
+                NotificationLevel::Warning,
+            );
+            return;
+        }
+
+        let cmd = select_exec_command(&defaults.entrypoint, &defaults.cmd);
+        let (cols, rows) =
+            compute_exec_pane_size(self.state.terminal_size.0, self.state.terminal_size.1);
+
+        let exec = match client
+            .start_exec_session(&defaults.container_id, cmd, cols, rows)
+            .await
+        {
+            Ok(exec) => exec,
+            Err(e) => {
+                self.state.add_notification(
+                    format!("Failed to start exec: {e}"),
+                    NotificationLevel::Error,
+                );
+                return;
+            }
+        };
+
+        let (tx, rx) = mpsc::channel(64);
+        let mut output = exec.output;
+        tokio::spawn(async move {
+            while let Some(item) = output.next().await {
+                match item {
+                    Ok(log) => {
+                        let bytes = match log {
+                            bollard::container::LogOutput::StdOut { message } => message.to_vec(),
+                            bollard::container::LogOutput::StdErr { message } => message.to_vec(),
+                            bollard::container::LogOutput::Console { message } => message.to_vec(),
+                            bollard::container::LogOutput::StdIn { message } => message.to_vec(),
+                        };
+                        if tx.send(ExecOutput::Bytes(bytes)).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(_) => {
+                        let _ = tx.send(ExecOutput::End).await;
+                        return;
+                    }
+                }
+            }
+            let _ = tx.send(ExecOutput::End).await;
+        });
+
+        let parser = vt100::Parser::new(rows, cols, 0);
+
+        self.state
+            .open_exec_view(defaults.container_id.clone(), defaults.container_name);
+        self.state
+            .add_notification("Exec started", NotificationLevel::Info);
+
+        self.exec_runtime = Some(ExecRuntime {
+            exec_id: exec.exec_id,
+            container_id: defaults.container_id,
+            input: exec.input,
+            parser,
+            output_rx: rx,
+            size: (cols, rows),
+        });
+    }
+
+    async fn write_exec_input(&mut self, bytes: Vec<u8>) {
+        if let Some(runtime) = &mut self.exec_runtime {
+            if let Err(e) = runtime.input.write_all(&bytes).await {
+                self.state.add_notification(
+                    format!("Exec input failed: {e}"),
+                    NotificationLevel::Error,
+                );
+            }
+        }
+    }
+
+    async fn check_exec_output(&mut self) {
+        let mut lines: Option<Vec<String>> = None;
+        let mut end = false;
+
+        if let Some(runtime) = &mut self.exec_runtime {
+            while let Ok(msg) = runtime.output_rx.try_recv() {
+                match msg {
+                    ExecOutput::Bytes(bytes) => {
+                        runtime.parser.process(&bytes);
+                        let contents = runtime.parser.screen().contents();
+                        lines = Some(contents.lines().map(|l| l.to_string()).collect());
+                    }
+                    ExecOutput::End => {
+                        end = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if let Some(lines) = lines {
+            self.state.update_exec_screen(lines, None);
+        }
+
+        if end {
+            self.state.close_exec_view();
+            self.exec_runtime = None;
+            self.state
+                .add_notification("Exec ended", NotificationLevel::Info);
+        }
+    }
+
+    async fn resize_exec_if_needed(&mut self) {
+        let (cols, rows) =
+            compute_exec_pane_size(self.state.terminal_size.0, self.state.terminal_size.1);
+
+        if let Some(runtime) = &mut self.exec_runtime {
+            if runtime.size != (cols, rows) {
+                runtime.size = (cols, rows);
+                runtime.parser.set_size(rows, cols);
+                if let Some(client) = &self.docker_client {
+                    let _ = client.resize_exec_session(&runtime.exec_id, cols, rows).await;
+                }
+            }
+        }
+    }
 }
 
 /// Format size in human readable format
@@ -1279,7 +1477,29 @@ fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Re
     Ok(())
 }
 
+fn compute_exec_pane_size(term_width: u16, term_height: u16) -> (u16, u16) {
+    let sidebar_width = (term_width / 5).clamp(12, 20);
+    let content_width = term_width.saturating_sub(sidebar_width);
+    let list_width = (content_width * 60) / 100;
+
+    let cols = list_width.saturating_sub(2).max(1);
+    let rows = crate::ui::components::exec_viewer::EXEC_PANEL_HEIGHT
+        .saturating_sub(2)
+        .min(term_height.saturating_sub(2))
+        .max(1);
+
+    (cols, rows)
+}
+
 #[cfg(test)]
 mod tests {
     // Note: Most tests would require async runtime and Docker
+    use super::compute_exec_pane_size;
+
+    #[test]
+    fn computes_exec_pane_size() {
+        let (cols, rows) = compute_exec_pane_size(120, 30);
+        assert!(cols > 0);
+        assert!(rows > 0);
+    }
 }
