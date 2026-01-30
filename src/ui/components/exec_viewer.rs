@@ -63,8 +63,8 @@ pub fn render_exec_panel(frame: &mut Frame, area: Rect, state: &ExecViewState) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ratatui::layout::Position;
     use ratatui::backend::TestBackend;
+    use ratatui::layout::Position;
     use ratatui::Terminal;
 
     #[test]

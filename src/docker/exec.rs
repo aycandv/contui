@@ -120,7 +120,13 @@ impl DockerClient {
 
         let _ = self
             .inner()
-            .resize_exec(&exec.id, ResizeExecOptions { width: cols, height: rows })
+            .resize_exec(
+                &exec.id,
+                ResizeExecOptions {
+                    width: cols,
+                    height: rows,
+                },
+            )
             .await;
 
         let started = self
@@ -139,20 +145,28 @@ impl DockerClient {
         match started {
             StartExecResults::Attached { output, input } => Ok(ExecStart {
                 exec_id: exec.id,
-                output: Box::pin(output.map(|item| item.map_err(|e| DockerError::Container(e.to_string()).into()))),
+                output: Box::pin(
+                    output
+                        .map(|item| item.map_err(|e| DockerError::Container(e.to_string()).into())),
+                ),
                 input,
             }),
-            StartExecResults::Detached => Err(DockerError::Container(
-                "Exec detached unexpectedly".to_string(),
-            )
-            .into()),
+            StartExecResults::Detached => {
+                Err(DockerError::Container("Exec detached unexpectedly".to_string()).into())
+            }
         }
     }
 
     /// Resize an exec TTY session
     pub async fn resize_exec_session(&self, exec_id: &str, cols: u16, rows: u16) -> Result<()> {
         self.inner()
-            .resize_exec(exec_id, ResizeExecOptions { width: cols, height: rows })
+            .resize_exec(
+                exec_id,
+                ResizeExecOptions {
+                    width: cols,
+                    height: rows,
+                },
+            )
             .await
             .map_err(|e| DockerError::Container(format!("Failed to resize exec: {e}")))?;
         Ok(())

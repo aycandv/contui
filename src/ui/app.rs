@@ -11,8 +11,8 @@ use ratatui::Frame;
 use tracing::{debug, info};
 
 use crate::core::{ConfirmAction, ContainerState, Tab, UiAction};
-use crate::exec::input::encode_key_event;
 use crate::docker::format_bytes_size;
+use crate::exec::input::encode_key_event;
 use crate::state::AppState;
 use crate::ui::components::ContainerListWidget;
 
@@ -86,9 +86,7 @@ impl UiApp {
         // If exec view is focused, route keys to exec (except Ctrl+E)
         if let Some(exec_view) = &self.state.exec_view {
             if exec_view.focus {
-                if key.code == KeyCode::Char('e')
-                    && key.modifiers.contains(KeyModifiers::CONTROL)
-                {
+                if key.code == KeyCode::Char('e') && key.modifiers.contains(KeyModifiers::CONTROL) {
                     self.state.toggle_exec_focus();
                     return UiAction::None;
                 }
@@ -1352,18 +1350,10 @@ impl UiApp {
 
         // Render exec panel if visible
         if let (Some(bottom_area), Some(exec_view)) = (bottom_area, &self.state.exec_view) {
-            crate::ui::components::exec_viewer::render_exec_panel(
-                frame,
-                bottom_area,
-                exec_view,
-            );
+            crate::ui::components::exec_viewer::render_exec_panel(frame, bottom_area, exec_view);
         } else if let (Some(bottom_area), Some(stats_view)) = (bottom_area, &self.state.stats_view)
         {
-            crate::ui::components::stats_viewer::render_stats_panel(
-                frame,
-                bottom_area,
-                stats_view,
-            );
+            crate::ui::components::stats_viewer::render_stats_panel(frame, bottom_area, stats_view);
         }
 
         // Render detail panel for selected container
@@ -1900,7 +1890,11 @@ mod tests {
 
         let buffer = terminal.backend().buffer();
         let footer_line: String = (0..buffer.area.width)
-            .filter_map(|x| buffer.cell((x, buffer.area.height - 1)).map(|c| c.symbol().to_string()))
+            .filter_map(|x| {
+                buffer
+                    .cell((x, buffer.area.height - 1))
+                    .map(|c| c.symbol().to_string())
+            })
             .collect::<Vec<_>>()
             .join("");
 

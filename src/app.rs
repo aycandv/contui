@@ -21,9 +21,9 @@ use crate::docker::{select_exec_command, DockerClient, LogEntry, SystemDiskUsage
 use crate::exec::spinner;
 use crate::state::AppState;
 use crate::ui::{UiAction, UiApp};
-use tokio::sync::mpsc;
-use tokio::io::AsyncWriteExt;
 use futures::StreamExt;
+use tokio::io::AsyncWriteExt;
+use tokio::sync::mpsc;
 
 /// Main application struct
 pub struct App {
@@ -888,10 +888,8 @@ impl App {
             None => {
                 if self.state.docker_connected {
                     self.state.docker_connected = false;
-                    self.state.add_notification(
-                        "Lost connection to Docker",
-                        NotificationLevel::Error,
-                    );
+                    self.state
+                        .add_notification("Lost connection to Docker", NotificationLevel::Error);
                 }
                 self.docker_client = None;
             }
@@ -1605,10 +1603,8 @@ impl App {
     async fn write_exec_input(&mut self, bytes: Vec<u8>) {
         if let Some(runtime) = &mut self.exec_runtime {
             if let Err(e) = runtime.input.write_all(&bytes).await {
-                self.state.add_notification(
-                    format!("Exec input failed: {e}"),
-                    NotificationLevel::Error,
-                );
+                self.state
+                    .add_notification(format!("Exec input failed: {e}"), NotificationLevel::Error);
             }
         }
     }
@@ -1642,18 +1638,18 @@ impl App {
                                     match item {
                                         Ok(log) => {
                                             let bytes = match log {
-                                                bollard::container::LogOutput::StdOut { message } => {
-                                                    message.to_vec()
-                                                }
-                                                bollard::container::LogOutput::StdErr { message } => {
-                                                    message.to_vec()
-                                                }
-                                                bollard::container::LogOutput::Console { message } => {
-                                                    message.to_vec()
-                                                }
-                                                bollard::container::LogOutput::StdIn { message } => {
-                                                    message.to_vec()
-                                                }
+                                                bollard::container::LogOutput::StdOut {
+                                                    message,
+                                                } => message.to_vec(),
+                                                bollard::container::LogOutput::StdErr {
+                                                    message,
+                                                } => message.to_vec(),
+                                                bollard::container::LogOutput::Console {
+                                                    message,
+                                                } => message.to_vec(),
+                                                bollard::container::LogOutput::StdIn {
+                                                    message,
+                                                } => message.to_vec(),
                                             };
                                             if tx.send(ExecOutput::Bytes(bytes)).await.is_err() {
                                                 break;
@@ -1686,7 +1682,10 @@ impl App {
                                 size,
                             });
                         }
-                        ExecStartResult::Failed { container_id, message } => {
+                        ExecStartResult::Failed {
+                            container_id,
+                            message,
+                        } => {
                             let matches_pending = self
                                 .exec_start_pending
                                 .as_ref()
@@ -1696,8 +1695,7 @@ impl App {
                                 return;
                             }
                             self.exec_start_pending = None;
-                            self.state
-                                .set_exec_status(format!("Failed: {}", message));
+                            self.state.set_exec_status(format!("Failed: {}", message));
                             self.state.add_notification(
                                 format!("Exec failed: {}", message),
                                 NotificationLevel::Error,
@@ -1711,10 +1709,8 @@ impl App {
                         self.exec_start_pending = None;
                         self.state
                             .set_exec_status("Failed: exec start canceled".to_string());
-                        self.state.add_notification(
-                            "Exec start canceled",
-                            NotificationLevel::Error,
-                        );
+                        self.state
+                            .add_notification("Exec start canceled", NotificationLevel::Error);
                     }
                 }
                 Err(_) => {}
@@ -1725,8 +1721,7 @@ impl App {
     fn tick_exec_spinner(&mut self) {
         if let Some(pending) = &mut self.exec_start_pending {
             let frame = spinner::frame(pending.spinner_index);
-            self.state
-                .set_exec_status(format_exec_start_status(frame));
+            self.state.set_exec_status(format_exec_start_status(frame));
             pending.spinner_index = spinner::next_index(pending.spinner_index);
         }
     }
@@ -1782,7 +1777,9 @@ impl App {
                 runtime.size = (cols, rows);
                 runtime.parser.set_size(rows, cols);
                 if let Some(client) = &self.docker_client {
-                    let _ = client.resize_exec_session(&runtime.exec_id, cols, rows).await;
+                    let _ = client
+                        .resize_exec_session(&runtime.exec_id, cols, rows)
+                        .await;
                 }
             }
         }
@@ -1861,9 +1858,7 @@ fn exec_tick_rate(exec_focused: bool) -> Duration {
 #[cfg(test)]
 mod tests {
     // Note: Most tests would require async runtime and Docker
-    use super::{
-        compute_exec_pane_size, exec_tick_rate, format_exec_start_status, RefreshGate,
-    };
+    use super::{compute_exec_pane_size, exec_tick_rate, format_exec_start_status, RefreshGate};
     use std::time::Duration;
 
     #[test]

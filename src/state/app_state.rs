@@ -719,7 +719,6 @@ impl AppState {
         }
     }
 
-
     // ==================== Detail View Methods ====================
 
     /// Open detail view for a container
