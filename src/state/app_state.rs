@@ -703,6 +703,14 @@ impl AppState {
         }
     }
 
+    /// Set exec status text
+    pub fn set_exec_status(&mut self, status: impl Into<String>) {
+        if let Some(exec_view) = &mut self.exec_view {
+            exec_view.status = status.into();
+        }
+    }
+
+
     // ==================== Detail View Methods ====================
 
     /// Open detail view for a container
@@ -903,5 +911,14 @@ mod tests {
         assert!(!state.exec_view.as_ref().unwrap().focus);
         state.close_exec_view();
         assert!(state.exec_view.is_none());
+    }
+
+    #[test]
+    fn exec_view_set_status() {
+        let mut state = AppState::new();
+        state.open_exec_view("abc".into(), "web".into());
+        state.set_exec_status("Starting |");
+        let exec_view = state.exec_view.as_ref().unwrap();
+        assert_eq!(exec_view.status, "Starting |");
     }
 }

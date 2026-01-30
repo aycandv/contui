@@ -7,13 +7,15 @@ use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 use std::io;
-use std::time::Duration;
 use std::pin::Pin;
+use std::time::Duration;
 use tracing::{debug, error, info, warn};
 
 use crate::config::Config;
 use crate::core::{ConnectionInfo, NotificationLevel, Result as ContuiResult};
+use crate::docker::exec::ExecStart;
 use crate::docker::{select_exec_command, DockerClient, LogEntry};
+use crate::exec::spinner;
 use crate::state::AppState;
 use crate::ui::{UiAction, UiApp};
 use tokio::sync::mpsc;
@@ -36,6 +38,10 @@ pub struct App {
     last_stats_fetch: Option<std::time::Instant>,
     /// Exec runtime state
     exec_runtime: Option<ExecRuntime>,
+    /// Channel receiver for exec start results
+    exec_start_rx: Option<mpsc::Receiver<ExecStartResult>>,
+    /// Pending exec start metadata (for spinner/status)
+    exec_start_pending: Option<ExecStartPending>,
     /// Track last terminal size for exec resize
     last_terminal_size: Option<(u16, u16)>,
 }
@@ -52,6 +58,24 @@ struct ExecRuntime {
     parser: vt100::Parser,
     output_rx: mpsc::Receiver<ExecOutput>,
     size: (u16, u16),
+}
+
+struct ExecStartPending {
+    container_id: String,
+    spinner_index: usize,
+}
+
+enum ExecStartResult {
+    Started {
+        exec: ExecStart,
+        container_id: String,
+        container_name: String,
+        size: (u16, u16),
+    },
+    Failed {
+        container_id: String,
+        message: String,
+    },
 }
 
 impl App {
@@ -83,6 +107,8 @@ impl App {
             stats_fetch_rx: None,
             last_stats_fetch: None,
             exec_runtime: None,
+            exec_start_rx: None,
+            exec_start_pending: None,
             last_terminal_size: None,
         })
     }
@@ -225,6 +251,11 @@ impl App {
                     self.refresh_data().await;
                     last_data_refresh = std::time::Instant::now();
                 }
+
+                // Check for exec start completion
+                self.check_exec_start().await;
+                // Tick exec spinner while starting
+                self.tick_exec_spinner();
 
                 // Check for exec output
                 self.check_exec_output().await;
@@ -1287,8 +1318,22 @@ impl App {
             return;
         }
 
+        if let Some(pending) = &self.exec_start_pending {
+            if pending.container_id == id {
+                self.state.close_exec_view();
+                self.exec_start_pending = None;
+                self.exec_start_rx = None;
+                return;
+            }
+            self.state.add_notification(
+                "Exec already starting for another container",
+                NotificationLevel::Warning,
+            );
+            return;
+        }
+
         let client = match &self.docker_client {
-            Some(client) => client,
+            Some(client) => client.clone(),
             None => {
                 self.state
                     .add_notification("Docker not connected", NotificationLevel::Error);
@@ -1296,82 +1341,86 @@ impl App {
             }
         };
 
-        let defaults = match client.exec_defaults(id).await {
-            Ok(d) => d,
-            Err(e) => {
-                self.state.add_notification(
-                    format!("Failed to inspect container: {e}"),
-                    NotificationLevel::Error,
-                );
-                return;
-            }
-        };
-
-        if !defaults.running {
-            self.state.add_notification(
-                "Container is not running",
-                NotificationLevel::Warning,
-            );
-            return;
-        }
-
-        let cmd = select_exec_command(&defaults.entrypoint, &defaults.cmd);
+        let container_name = self
+            .state
+            .containers
+            .iter()
+            .find(|c| c.id == id)
+            .and_then(|c| c.names.first())
+            .cloned()
+            .unwrap_or_else(|| id.chars().take(12).collect::<String>());
         let (cols, rows) =
             compute_exec_pane_size(self.state.terminal_size.0, self.state.terminal_size.1);
 
-        let exec = match client
-            .start_exec_session(&defaults.container_id, cmd, cols, rows)
-            .await
-        {
-            Ok(exec) => exec,
-            Err(e) => {
-                self.state.add_notification(
-                    format!("Failed to start exec: {e}"),
-                    NotificationLevel::Error,
-                );
-                return;
-            }
-        };
+        self.state
+            .open_exec_view(id.to_string(), container_name.clone());
+        self.state
+            .set_exec_status(format_exec_start_status(spinner::frame(0)));
 
-        let (tx, rx) = mpsc::channel(64);
-        let mut output = exec.output;
-        tokio::spawn(async move {
-            while let Some(item) = output.next().await {
-                match item {
-                    Ok(log) => {
-                        let bytes = match log {
-                            bollard::container::LogOutput::StdOut { message } => message.to_vec(),
-                            bollard::container::LogOutput::StdErr { message } => message.to_vec(),
-                            bollard::container::LogOutput::Console { message } => message.to_vec(),
-                            bollard::container::LogOutput::StdIn { message } => message.to_vec(),
-                        };
-                        if tx.send(ExecOutput::Bytes(bytes)).await.is_err() {
-                            break;
-                        }
-                    }
-                    Err(_) => {
-                        let _ = tx.send(ExecOutput::End).await;
-                        return;
-                    }
-                }
-            }
-            let _ = tx.send(ExecOutput::End).await;
+        self.exec_start_pending = Some(ExecStartPending {
+            container_id: id.to_string(),
+            spinner_index: 0,
         });
 
-        let parser = vt100::Parser::new(rows, cols, 0);
+        let (tx, rx) = mpsc::channel(1);
+        self.exec_start_rx = Some(rx);
 
-        self.state
-            .open_exec_view(defaults.container_id.clone(), defaults.container_name);
-        self.state
-            .add_notification("Exec started", NotificationLevel::Info);
+        let container_id = id.to_string();
+        tokio::spawn(async move {
+            let defaults = match client.exec_defaults(&container_id).await {
+                Ok(d) => d,
+                Err(e) => {
+                    let _ = tx
+                        .send(ExecStartResult::Failed {
+                            container_id,
+                            message: format!("Failed to inspect container: {e}"),
+                        })
+                        .await;
+                    return;
+                }
+            };
 
-        self.exec_runtime = Some(ExecRuntime {
-            exec_id: exec.exec_id,
-            container_id: defaults.container_id,
-            input: exec.input,
-            parser,
-            output_rx: rx,
-            size: (cols, rows),
+            if !defaults.running {
+                let _ = tx
+                    .send(ExecStartResult::Failed {
+                        container_id: defaults.container_id,
+                        message: "Container is not running".to_string(),
+                    })
+                    .await;
+                return;
+            }
+
+            let cmd = select_exec_command(&defaults.entrypoint, &defaults.cmd);
+            let exec = match client
+                .start_exec_session(&defaults.container_id, cmd, cols, rows)
+                .await
+            {
+                Ok(exec) => exec,
+                Err(e) => {
+                    let _ = tx
+                        .send(ExecStartResult::Failed {
+                            container_id: defaults.container_id,
+                            message: format!("Failed to start exec: {e}"),
+                        })
+                        .await;
+                    return;
+                }
+            };
+
+            let container_name = if defaults.container_name.is_empty() {
+                container_name
+            } else {
+                defaults.container_name
+            };
+
+            let _ = tx
+                .send(ExecStartResult::Started {
+                    exec,
+                    container_id: defaults.container_id,
+                    container_name,
+                    size: (cols, rows),
+                })
+                .await;
         });
     }
 
@@ -1383,6 +1432,124 @@ impl App {
                     NotificationLevel::Error,
                 );
             }
+        }
+    }
+
+    async fn check_exec_start(&mut self) {
+        if let Some(rx) = &mut self.exec_start_rx {
+            match tokio::time::timeout(Duration::from_millis(1), rx.recv()).await {
+                Ok(Some(result)) => {
+                    self.exec_start_rx = None;
+                    match result {
+                        ExecStartResult::Started {
+                            exec,
+                            container_id,
+                            container_name,
+                            size,
+                        } => {
+                            let matches_pending = self
+                                .exec_start_pending
+                                .as_ref()
+                                .map(|p| p.container_id == container_id)
+                                .unwrap_or(false);
+                            if !matches_pending {
+                                return;
+                            }
+                            self.exec_start_pending = None;
+
+                            let (tx, rx) = mpsc::channel(64);
+                            let mut output = exec.output;
+                            tokio::spawn(async move {
+                                while let Some(item) = output.next().await {
+                                    match item {
+                                        Ok(log) => {
+                                            let bytes = match log {
+                                                bollard::container::LogOutput::StdOut { message } => {
+                                                    message.to_vec()
+                                                }
+                                                bollard::container::LogOutput::StdErr { message } => {
+                                                    message.to_vec()
+                                                }
+                                                bollard::container::LogOutput::Console { message } => {
+                                                    message.to_vec()
+                                                }
+                                                bollard::container::LogOutput::StdIn { message } => {
+                                                    message.to_vec()
+                                                }
+                                            };
+                                            if tx.send(ExecOutput::Bytes(bytes)).await.is_err() {
+                                                break;
+                                            }
+                                        }
+                                        Err(_) => {
+                                            let _ = tx.send(ExecOutput::End).await;
+                                            return;
+                                        }
+                                    }
+                                }
+                                let _ = tx.send(ExecOutput::End).await;
+                            });
+
+                            let parser = vt100::Parser::new(size.1, size.0, 0);
+                            if let Some(exec_view) = &mut self.state.exec_view {
+                                exec_view.container_id = container_id.clone();
+                                exec_view.container_name = container_name;
+                            }
+                            self.state.set_exec_status("Running");
+                            self.state
+                                .add_notification("Exec started", NotificationLevel::Info);
+
+                            self.exec_runtime = Some(ExecRuntime {
+                                exec_id: exec.exec_id,
+                                container_id,
+                                input: exec.input,
+                                parser,
+                                output_rx: rx,
+                                size,
+                            });
+                        }
+                        ExecStartResult::Failed { container_id, message } => {
+                            let matches_pending = self
+                                .exec_start_pending
+                                .as_ref()
+                                .map(|p| p.container_id == container_id)
+                                .unwrap_or(false);
+                            if !matches_pending {
+                                return;
+                            }
+                            self.exec_start_pending = None;
+                            self.state
+                                .set_exec_status(format!("Failed: {}", message));
+                            self.state.add_notification(
+                                format!("Exec failed: {}", message),
+                                NotificationLevel::Error,
+                            );
+                        }
+                    }
+                }
+                Ok(None) => {
+                    self.exec_start_rx = None;
+                    if self.exec_start_pending.is_some() {
+                        self.exec_start_pending = None;
+                        self.state
+                            .set_exec_status("Failed: exec start canceled".to_string());
+                        self.state.add_notification(
+                            "Exec start canceled",
+                            NotificationLevel::Error,
+                        );
+                    }
+                }
+                Err(_) => {}
+            }
+        }
+    }
+
+    fn tick_exec_spinner(&mut self) {
+        if let Some(pending) = &mut self.exec_start_pending {
+            let frame = spinner::frame(pending.spinner_index);
+            self.state
+                .set_exec_status(format_exec_start_status(frame));
+            pending.spinner_index = spinner::next_index(pending.spinner_index);
         }
     }
 
@@ -1491,15 +1658,24 @@ fn compute_exec_pane_size(term_width: u16, term_height: u16) -> (u16, u16) {
     (cols, rows)
 }
 
+fn format_exec_start_status(frame: &str) -> String {
+    format!("Starting {}", frame)
+}
+
 #[cfg(test)]
 mod tests {
     // Note: Most tests would require async runtime and Docker
-    use super::compute_exec_pane_size;
+    use super::{compute_exec_pane_size, format_exec_start_status};
 
     #[test]
     fn computes_exec_pane_size() {
         let (cols, rows) = compute_exec_pane_size(120, 30);
         assert!(cols > 0);
         assert!(rows > 0);
+    }
+
+    #[test]
+    fn formats_exec_start_status_with_spinner() {
+        assert_eq!(format_exec_start_status("|"), "Starting |");
     }
 }
