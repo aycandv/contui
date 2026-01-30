@@ -312,6 +312,15 @@ impl App {
                     .add_notification("Loading details...", NotificationLevel::Info);
                 self.fetch_container_details(id).await;
             }
+            UiAction::ExecContainer(_) => {
+                // Wired in a later task
+            }
+            UiAction::StartContainerAndExec(_) => {
+                // Wired in a later task
+            }
+            UiAction::ExecInput(_) => {
+                // Wired in a later task
+            }
             UiAction::RemoveImage(id) => {
                 self.remove_image(&id).await;
             }

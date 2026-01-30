@@ -235,6 +235,12 @@ pub enum UiAction {
     ShowContainerStats(String),
     /// Show details for a container
     ShowContainerDetails(String),
+    /// Exec into a container
+    ExecContainer(String),
+    /// Start container then exec
+    StartContainerAndExec(String),
+    /// Send input to exec session
+    ExecInput(Vec<u8>),
     /// Show details for an image
     ShowImageDetails(String),
     /// Remove an image

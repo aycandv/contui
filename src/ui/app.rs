@@ -11,6 +11,7 @@ use ratatui::Frame;
 use tracing::{debug, info};
 
 use crate::core::{ConfirmAction, ContainerState, Tab, UiAction};
+use crate::exec::input::encode_key_event;
 use crate::docker::format_bytes_size;
 use crate::state::AppState;
 use crate::ui::components::ContainerListWidget;
@@ -50,13 +51,6 @@ impl UiApp {
             return UiAction::None;
         }
 
-        // Always allow immediate quit
-        if key.code == KeyCode::Char('c') && key.modifiers == KeyModifiers::CONTROL {
-            info!("Ctrl+C pressed");
-            self.should_quit = true;
-            return UiAction::Quit;
-        }
-
         // If confirmation dialog is showing
         if self.state.confirm_dialog.is_some() {
             return self.handle_confirmation_key(key);
@@ -87,6 +81,29 @@ impl UiApp {
         // If prune dialog is active, handle prune dialog keys (modal, blocks everything)
         if self.state.prune_dialog.is_some() {
             return self.handle_prune_dialog_key(key);
+        }
+
+        // If exec view is focused, route keys to exec (except Ctrl+E)
+        if let Some(exec_view) = &self.state.exec_view {
+            if exec_view.focus {
+                if key.code == KeyCode::Char('e')
+                    && key.modifiers.contains(KeyModifiers::CONTROL)
+                {
+                    self.state.toggle_exec_focus();
+                    return UiAction::None;
+                }
+                if let Some(bytes) = encode_key_event(key) {
+                    return UiAction::ExecInput(bytes);
+                }
+                return UiAction::None;
+            }
+        }
+
+        // Always allow immediate quit
+        if key.code == KeyCode::Char('c') && key.modifiers == KeyModifiers::CONTROL {
+            info!("Ctrl+C pressed");
+            self.should_quit = true;
+            return UiAction::Quit;
         }
 
         // Global key handlers
@@ -171,9 +188,20 @@ impl UiApp {
             KeyCode::Char('i') if self.state.current_tab == Tab::Containers => {
                 self.handle_inspect_action()
             }
+            KeyCode::Char('x') if self.state.current_tab == Tab::Containers => {
+                self.handle_exec_action()
+            }
             // Toggle stats follow when stats panel is visible
             KeyCode::Char('f') if self.state.stats_view.is_some() => {
                 self.state.toggle_stats_follow();
+                UiAction::None
+            }
+            // Toggle exec focus when exec view is visible
+            KeyCode::Char('e')
+                if key.modifiers.contains(KeyModifiers::CONTROL)
+                    && self.state.exec_view.is_some() =>
+            {
+                self.state.toggle_exec_focus();
                 UiAction::None
             }
 
@@ -709,6 +737,32 @@ impl UiApp {
         }
     }
 
+    /// Handle exec action
+    fn handle_exec_action(&mut self) -> UiAction {
+        if let Some(container) = self
+            .state
+            .containers
+            .get(self.state.container_list_selected)
+        {
+            let id = container.id.clone();
+            if container.state == ContainerState::Running {
+                UiAction::ExecContainer(id)
+            } else {
+                let name = container
+                    .names
+                    .first()
+                    .cloned()
+                    .unwrap_or_else(|| container.short_id.clone());
+                self.state.confirm_dialog = Some(ConfirmAction {
+                    message: format!("Start container '{}' to exec?", name),
+                    action: UiAction::StartContainerAndExec(id),
+                });
+                UiAction::None
+            }
+        } else {
+            UiAction::None
+        }
+    }
     /// Handle inspect action
     fn handle_inspect_action(&mut self) -> UiAction {
         if let Some(container) = self
@@ -1259,11 +1313,21 @@ impl UiApp {
         // Split area: 60% for list, 40% for detail
         let (list_area, detail_area) = SplitLayout::horizontal_split(area, 60);
 
-        // Check if stats panel is open
+        // Check if exec or stats panel is open
+        let show_exec = self.state.exec_view.is_some();
         let show_stats = self.state.stats_view.is_some();
 
-        // Split list area vertically if stats panel is shown
-        let (table_area, stats_area) = if show_stats {
+        // Split list area vertically if exec or stats panel is shown
+        let (table_area, bottom_area) = if show_exec {
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Min(3),
+                    Constraint::Length(crate::ui::components::exec_viewer::EXEC_PANEL_HEIGHT),
+                ])
+                .split(list_area);
+            (chunks[0], Some(chunks[1]))
+        } else if show_stats {
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
@@ -1286,9 +1350,20 @@ impl UiApp {
         table_state.select(Some(self.state.container_list_selected));
         frame.render_stateful_widget(table, table_area, &mut table_state);
 
-        // Render stats panel if visible
-        if let (Some(stats_area), Some(stats_view)) = (stats_area, &self.state.stats_view) {
-            crate::ui::components::stats_viewer::render_stats_panel(frame, stats_area, stats_view);
+        // Render exec panel if visible
+        if let (Some(bottom_area), Some(exec_view)) = (bottom_area, &self.state.exec_view) {
+            crate::ui::components::exec_viewer::render_exec_panel(
+                frame,
+                bottom_area,
+                exec_view,
+            );
+        } else if let (Some(bottom_area), Some(stats_view)) = (bottom_area, &self.state.stats_view)
+        {
+            crate::ui::components::stats_viewer::render_stats_panel(
+                frame,
+                bottom_area,
+                stats_view,
+            );
         }
 
         // Render detail panel for selected container
@@ -1531,7 +1606,7 @@ impl UiApp {
         } else if self.state.show_help {
             Cow::Borrowed(" Press any key to close help ")
         } else if self.state.current_tab == Tab::Containers && !self.state.containers.is_empty() {
-            Cow::Borrowed(" [↑/↓]Select [s]Start [p]Pause [r]Restart [k]Kill [d]Delete [l]Logs [m]Stats [i]Inspect [?]Help [q]Quit ")
+            Cow::Borrowed(" [↑/↓]Select [s]Start [p]Pause [r]Restart [k]Kill [d]Delete [l]Logs [m]Stats [i]Inspect [x]Exec [?]Help [q]Quit ")
         } else if self.state.current_tab == Tab::Images && !self.state.images.is_empty() {
             Cow::Borrowed(" [↑/↓]Select [d]Delete [p]Prune [i]Inspect [?]Help [q]Quit ")
         } else if self.state.current_tab == Tab::Volumes && !self.state.volumes.is_empty() {
@@ -1578,6 +1653,7 @@ Containers Tab:
   l                View logs
   m                Toggle stats panel
   i                Inspect container (detailed info)
+  x                Exec into container
 
 Images Tab:
   ↑/↓ or j/k       Select image
@@ -1612,6 +1688,9 @@ Log View:
 
 Stats Panel (toggle with 'm'):
   f                Toggle live/pause updates
+
+Exec Pane:
+  Ctrl+E           Toggle focus between UI and exec
 
 Detail View (inspect container):
   ↑/↓ or PgUp/PgDn Scroll
@@ -1767,5 +1846,24 @@ mod tests {
             .unwrap();
 
         // Just verify it doesn't panic
+    }
+
+    #[test]
+    fn exec_key_triggers_action() {
+        let mut state = AppState::default();
+        state.current_tab = Tab::Containers;
+        state.containers = vec![crate::core::ContainerSummary {
+            id: "abc".to_string(),
+            state: crate::core::ContainerState::Running,
+            ..Default::default()
+        }];
+        state.container_list_selected = 0;
+
+        let mut app = UiApp::new(state);
+        let action = app.handle_event(crossterm::event::Event::Key(
+            crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Char('x')),
+        ));
+
+        assert!(matches!(action, UiAction::ExecContainer(_)));
     }
 }
