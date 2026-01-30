@@ -41,11 +41,23 @@ pub fn render_exec_panel(frame: &mut Frame, area: Rect, state: &ExecViewState) {
 
     let para = Paragraph::new(lines);
     frame.render_widget(para, inner_area);
+
+    if state.focus {
+        if let Some((row, col)) = state.cursor {
+            if row < inner_area.height && col < inner_area.width {
+                frame.set_cursor_position((
+                    inner_area.x.saturating_add(col),
+                    inner_area.y.saturating_add(row),
+                ));
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ratatui::layout::Position;
     use ratatui::backend::TestBackend;
     use ratatui::Terminal;
 
@@ -59,6 +71,7 @@ mod tests {
             focus: true,
             status: "Running".into(),
             screen_lines: vec!["hello".into()],
+            cursor: None,
         };
 
         terminal
@@ -80,6 +93,7 @@ mod tests {
             focus: true,
             status: "Starting |".into(),
             screen_lines: vec![],
+            cursor: None,
         };
 
         terminal
@@ -99,5 +113,27 @@ mod tests {
             }
         }
         assert!(found, "expected placeholder to include status text");
+    }
+
+    #[test]
+    fn renders_exec_cursor_when_focused() {
+        let backend = TestBackend::new(20, 8);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let state = ExecViewState {
+            container_id: "id".into(),
+            container_name: "web".into(),
+            focus: true,
+            status: "Running".into(),
+            screen_lines: vec!["hello".into()],
+            cursor: Some((1, 2)),
+        };
+
+        terminal
+            .draw(|f| render_exec_panel(f, f.area(), &state))
+            .unwrap();
+
+        terminal
+            .backend_mut()
+            .assert_cursor_position(Position::new(3, 2));
     }
 }

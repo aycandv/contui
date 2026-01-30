@@ -1624,7 +1624,7 @@ impl UiApp {
             && self.state.confirm_dialog.is_none()
             && !self.state.show_help
         {
-            Cow::Owned(format!("{base_text}[Ctrl+E]Exec Focus "))
+            Cow::Owned(format!("{base_text}[Ctrl+E]Focus "))
         } else {
             base_text
         };
@@ -1881,7 +1881,7 @@ mod tests {
 
     #[test]
     fn exec_footer_includes_focus_hint() {
-        let backend = TestBackend::new(120, 10);
+        let backend = TestBackend::new(200, 10);
         let mut terminal = Terminal::new(backend).unwrap();
         let mut state = AppState::default();
         state.current_tab = Tab::Containers;
@@ -1892,6 +1892,7 @@ mod tests {
             focus: true,
             status: "Starting".into(),
             screen_lines: vec![],
+            cursor: None,
         });
 
         let app = UiApp::new(state);
@@ -1904,7 +1905,9 @@ mod tests {
             .join("");
 
         assert!(
-            footer_line.contains("Ctrl+E"),
+            footer_line.contains("Ctrl+E")
+                && footer_line.contains("Focus")
+                && !footer_line.contains("Exec Focus"),
             "expected footer to include exec focus hint"
         );
     }

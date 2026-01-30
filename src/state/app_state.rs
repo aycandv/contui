@@ -112,6 +112,7 @@ pub struct ExecViewState {
     pub focus: bool,
     pub status: String,
     pub screen_lines: Vec<String>,
+    pub cursor: Option<(u16, u16)>,
 }
 
 /// Detail view state
@@ -676,6 +677,7 @@ impl AppState {
             focus: true,
             status: "Starting".to_string(),
             screen_lines: vec![],
+            cursor: None,
         });
         // Avoid stacking bottom panels
         self.stats_view = None;
@@ -707,6 +709,13 @@ impl AppState {
     pub fn set_exec_status(&mut self, status: impl Into<String>) {
         if let Some(exec_view) = &mut self.exec_view {
             exec_view.status = status.into();
+        }
+    }
+
+    /// Set exec cursor position
+    pub fn set_exec_cursor(&mut self, cursor: Option<(u16, u16)>) {
+        if let Some(exec_view) = &mut self.exec_view {
+            exec_view.cursor = cursor;
         }
     }
 
@@ -920,5 +929,14 @@ mod tests {
         state.set_exec_status("Starting |");
         let exec_view = state.exec_view.as_ref().unwrap();
         assert_eq!(exec_view.status, "Starting |");
+    }
+
+    #[test]
+    fn exec_view_set_cursor() {
+        let mut state = AppState::new();
+        state.open_exec_view("abc".into(), "web".into());
+        state.set_exec_cursor(Some((2, 4)));
+        let exec_view = state.exec_view.as_ref().unwrap();
+        assert_eq!(exec_view.cursor, Some((2, 4)));
     }
 }

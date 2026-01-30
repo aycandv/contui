@@ -151,11 +151,17 @@ impl App {
     ) -> Result<()> {
         let mut last_tick = std::time::Instant::now();
         let mut last_data_refresh = std::time::Instant::now();
-        let tick_rate = Duration::from_millis(250);
         let data_refresh_rate = Duration::from_secs(2); // Refresh data every 2 seconds
         let mut should_quit;
 
         loop {
+            let exec_focused = self
+                .state
+                .exec_view
+                .as_ref()
+                .map(|view| view.focus)
+                .unwrap_or(false);
+            let tick_rate = exec_tick_rate(exec_focused);
             // Render the UI
             let ui_app = UiApp::new(self.state.clone());
             terminal.draw(|f| ui_app.draw(f))?;
@@ -1555,6 +1561,7 @@ impl App {
 
     async fn check_exec_output(&mut self) {
         let mut lines: Option<Vec<String>> = None;
+        let mut cursor: Option<Option<(u16, u16)>> = None;
         let mut end = false;
 
         if let Some(runtime) = &mut self.exec_runtime {
@@ -1562,8 +1569,14 @@ impl App {
                 match msg {
                     ExecOutput::Bytes(bytes) => {
                         runtime.parser.process(&bytes);
-                        let contents = runtime.parser.screen().contents();
+                        let screen = runtime.parser.screen();
+                        let contents = screen.contents();
                         lines = Some(contents.lines().map(|l| l.to_string()).collect());
+                        cursor = Some(if screen.hide_cursor() {
+                            None
+                        } else {
+                            Some(screen.cursor_position())
+                        });
                     }
                     ExecOutput::End => {
                         end = true;
@@ -1575,6 +1588,9 @@ impl App {
 
         if let Some(lines) = lines {
             self.state.update_exec_screen(lines, None);
+        }
+        if let Some(cursor) = cursor {
+            self.state.set_exec_cursor(cursor);
         }
 
         if end {
@@ -1662,10 +1678,19 @@ fn format_exec_start_status(frame: &str) -> String {
     format!("Starting {}", frame)
 }
 
+fn exec_tick_rate(exec_focused: bool) -> Duration {
+    if exec_focused {
+        Duration::from_millis(50)
+    } else {
+        Duration::from_millis(250)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     // Note: Most tests would require async runtime and Docker
-    use super::{compute_exec_pane_size, format_exec_start_status};
+    use super::{compute_exec_pane_size, exec_tick_rate, format_exec_start_status};
+    use std::time::Duration;
 
     #[test]
     fn computes_exec_pane_size() {
@@ -1677,5 +1702,11 @@ mod tests {
     #[test]
     fn formats_exec_start_status_with_spinner() {
         assert_eq!(format_exec_start_status("|"), "Starting |");
+    }
+
+    #[test]
+    fn exec_tick_rate_changes_with_focus() {
+        assert_eq!(exec_tick_rate(true), Duration::from_millis(50));
+        assert_eq!(exec_tick_rate(false), Duration::from_millis(250));
     }
 }
