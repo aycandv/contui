@@ -20,10 +20,16 @@ pub fn render_exec_panel(frame: &mut Frame, area: Rect, state: &ExecViewState) {
         state.status
     );
 
+    let border_color = if state.focus {
+        Color::Magenta
+    } else {
+        Color::DarkGray
+    };
+
     let block = Block::default()
         .title(title)
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Magenta));
+        .border_style(Style::default().fg(border_color));
 
     let inner_area = block.inner(area);
     frame.render_widget(block, area);
