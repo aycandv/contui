@@ -12,9 +12,12 @@ use std::time::Duration;
 use tracing::{debug, error, info, warn};
 
 use crate::config::Config;
-use crate::core::{ConnectionInfo, NotificationLevel, Result as ContuiResult};
+use crate::core::{
+    ConnectionInfo, ContainerSummary, ImageSummary, NetworkSummary, NotificationLevel,
+    Result as ContuiResult, VolumeSummary,
+};
 use crate::docker::exec::ExecStart;
-use crate::docker::{select_exec_command, DockerClient, LogEntry};
+use crate::docker::{select_exec_command, DockerClient, LogEntry, SystemDiskUsage};
 use crate::exec::spinner;
 use crate::state::AppState;
 use crate::ui::{UiAction, UiApp};
@@ -36,6 +39,12 @@ pub struct App {
     stats_fetch_rx: Option<mpsc::Receiver<ContuiResult<crate::docker::StatsEntry>>>,
     /// Last time we auto-fetched stats (for follow mode)
     last_stats_fetch: Option<std::time::Instant>,
+    /// Channel receiver for data refresh results
+    data_refresh_handle: Option<DataRefreshHandle>,
+    /// Gate for data refresh requests
+    data_refresh_gate: RefreshGate,
+    /// Last time we requested a data refresh
+    last_data_refresh: std::time::Instant,
     /// Exec runtime state
     exec_runtime: Option<ExecRuntime>,
     /// Channel receiver for exec start results
@@ -78,6 +87,183 @@ enum ExecStartResult {
     },
 }
 
+#[derive(Debug, Default)]
+struct RefreshGate {
+    in_flight: bool,
+    pending: bool,
+}
+
+impl RefreshGate {
+    fn request(&mut self) -> bool {
+        if self.in_flight {
+            self.pending = true;
+            false
+        } else {
+            self.in_flight = true;
+            true
+        }
+    }
+
+    fn complete(&mut self) -> bool {
+        self.in_flight = false;
+        if self.pending {
+            self.pending = false;
+            true
+        } else {
+            false
+        }
+    }
+}
+
+struct DataRefreshHandle {
+    rx: mpsc::Receiver<DataRefreshResult>,
+    had_client: bool,
+}
+
+#[derive(Debug, Default)]
+struct DataRefreshData {
+    containers: Option<Vec<ContainerSummary>>,
+    images: Option<Vec<ImageSummary>>,
+    volumes: Option<Vec<VolumeSummary>>,
+    networks: Option<Vec<NetworkSummary>>,
+    disk_usage: Option<SystemDiskUsage>,
+}
+
+impl DataRefreshData {
+    async fn fetch(client: &DockerClient) -> Self {
+        let containers = match client.list_containers(true).await {
+            Ok(containers) => {
+                debug!("Loaded {} containers", containers.len());
+                Some(containers)
+            }
+            Err(e) => {
+                warn!("Failed to load containers: {}", e);
+                None
+            }
+        };
+
+        let images = match client.list_images(true).await {
+            Ok(images) => {
+                debug!("Loaded {} images", images.len());
+                Some(images)
+            }
+            Err(e) => {
+                warn!("Failed to load images: {}", e);
+                None
+            }
+        };
+
+        let volumes = match client.list_volumes().await {
+            Ok(volumes) => {
+                debug!("Loaded {} volumes", volumes.len());
+                Some(volumes)
+            }
+            Err(e) => {
+                warn!("Failed to load volumes: {}", e);
+                None
+            }
+        };
+
+        let networks = match client.list_networks().await {
+            Ok(networks) => {
+                debug!("Loaded {} networks", networks.len());
+                Some(networks)
+            }
+            Err(e) => {
+                warn!("Failed to load networks: {}", e);
+                None
+            }
+        };
+
+        let disk_usage = match client.get_disk_usage().await {
+            Ok(disk_usage) => {
+                debug!("Loaded disk usage");
+                Some(disk_usage)
+            }
+            Err(e) => {
+                warn!("Failed to load disk usage: {}", e);
+                None
+            }
+        };
+
+        Self {
+            containers,
+            images,
+            volumes,
+            networks,
+            disk_usage,
+        }
+    }
+
+    fn apply(self, state: &mut AppState) {
+        if let Some(containers) = self.containers {
+            state.update_containers(containers);
+        }
+        if let Some(images) = self.images {
+            state.update_images(images);
+        }
+        if let Some(volumes) = self.volumes {
+            state.update_volumes(volumes);
+        }
+        if let Some(networks) = self.networks {
+            state.update_networks(networks);
+        }
+        if let Some(disk_usage) = self.disk_usage {
+            state.update_disk_usage(disk_usage);
+        }
+    }
+}
+
+struct DataRefreshResult {
+    client: Option<DockerClient>,
+    info: Option<ConnectionInfo>,
+    data: DataRefreshData,
+}
+
+impl DataRefreshResult {
+    async fn gather(client: Option<DockerClient>, config: Config) -> Self {
+        if let Some(client) = client {
+            debug!("Refreshing data from Docker");
+            if let Err(e) = client.ping().await {
+                warn!("Lost connection to Docker: {}", e);
+                return Self::disconnected();
+            }
+
+            let data = DataRefreshData::fetch(&client).await;
+            let info = client.connection_info().clone();
+            return Self {
+                client: Some(client),
+                info: Some(info),
+                data,
+            };
+        }
+
+        info!("No Docker client, attempting to connect...");
+        match App::connect_docker(&config).await {
+            Ok((client, info)) => {
+                let data = DataRefreshData::fetch(&client).await;
+                Self {
+                    client: Some(client),
+                    info: Some(info),
+                    data,
+                }
+            }
+            Err(e) => {
+                warn!("Connection attempt failed: {}", e);
+                Self::disconnected()
+            }
+        }
+    }
+
+    fn disconnected() -> Self {
+        Self {
+            client: None,
+            info: None,
+            data: DataRefreshData::default(),
+        }
+    }
+}
+
 impl App {
     /// Create a new application instance
     pub async fn new(config: Config) -> Result<Self> {
@@ -106,6 +292,9 @@ impl App {
             last_log_fetch: None,
             stats_fetch_rx: None,
             last_stats_fetch: None,
+            data_refresh_handle: None,
+            data_refresh_gate: RefreshGate::default(),
+            last_data_refresh: std::time::Instant::now(),
             exec_runtime: None,
             exec_start_rx: None,
             exec_start_pending: None,
@@ -133,7 +322,7 @@ impl App {
         let mut terminal = setup_terminal()?;
 
         // Initial data load
-        self.refresh_data().await;
+        self.refresh_data_once().await;
 
         // Main event loop
         let result = self.run_event_loop(&mut terminal).await;
@@ -150,7 +339,6 @@ impl App {
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     ) -> Result<()> {
         let mut last_tick = std::time::Instant::now();
-        let mut last_data_refresh = std::time::Instant::now();
         let data_refresh_rate = Duration::from_secs(2); // Refresh data every 2 seconds
         let mut should_quit;
 
@@ -198,6 +386,9 @@ impl App {
 
                 // Check for completed stats fetches
                 self.check_stats_fetch().await;
+
+                // Check for completed data refreshes
+                self.check_data_refresh().await;
 
                 // Auto-refresh logs when in follow mode (every 2 seconds)
                 if let Some(ref log_view) = self.state.log_view {
@@ -253,9 +444,8 @@ impl App {
                 }
 
                 // Refresh data periodically (every 2 seconds)
-                if last_data_refresh.elapsed() >= data_refresh_rate {
-                    self.refresh_data().await;
-                    last_data_refresh = std::time::Instant::now();
+                if self.last_data_refresh.elapsed() >= data_refresh_rate {
+                    self.request_data_refresh();
                 }
 
                 // Check for exec start completion
@@ -448,7 +638,7 @@ impl App {
                     info!("Container {} started", id);
                     self.state
                         .add_notification("Container started", NotificationLevel::Success);
-                    self.refresh_data().await;
+                    self.request_data_refresh();
                 }
                 Err(e) => {
                     error!("Failed to start container {}: {}", id, e);
@@ -473,7 +663,7 @@ impl App {
                     info!("Container {} stopped", id);
                     self.state
                         .add_notification("Container stopped", NotificationLevel::Success);
-                    self.refresh_data().await;
+                    self.request_data_refresh();
                 }
                 Err(e) => {
                     error!("Failed to stop container {}: {}", id, e);
@@ -498,7 +688,7 @@ impl App {
                     info!("Container {} restarted", id);
                     self.state
                         .add_notification("Container restarted", NotificationLevel::Success);
-                    self.refresh_data().await;
+                    self.request_data_refresh();
                 }
                 Err(e) => {
                     error!("Failed to restart container {}: {}", id, e);
@@ -523,7 +713,7 @@ impl App {
                     info!("Container {} paused", id);
                     self.state
                         .add_notification("Container paused", NotificationLevel::Success);
-                    self.refresh_data().await;
+                    self.request_data_refresh();
                 }
                 Err(e) => {
                     error!("Failed to pause container {}: {}", id, e);
@@ -548,7 +738,7 @@ impl App {
                     info!("Container {} unpaused", id);
                     self.state
                         .add_notification("Container unpaused", NotificationLevel::Success);
-                    self.refresh_data().await;
+                    self.request_data_refresh();
                 }
                 Err(e) => {
                     error!("Failed to unpause container {}: {}", id, e);
@@ -573,7 +763,7 @@ impl App {
                     info!("Container {} killed", id);
                     self.state
                         .add_notification("Container killed", NotificationLevel::Success);
-                    self.refresh_data().await;
+                    self.request_data_refresh();
                 }
                 Err(e) => {
                     error!("Failed to kill container {}: {}", id, e);
@@ -598,7 +788,7 @@ impl App {
                     info!("Container {} removed", id);
                     self.state
                         .add_notification("Container removed", NotificationLevel::Success);
-                    self.refresh_data().await;
+                    self.request_data_refresh();
                 }
                 Err(e) => {
                     error!("Failed to remove container {}: {}", id, e);
@@ -614,114 +804,96 @@ impl App {
         }
     }
 
-    /// Refresh all data from Docker
-    async fn refresh_data(&mut self) {
-        // If we don't have a client, try to connect
-        if self.docker_client.is_none() {
-            info!("No Docker client, attempting to connect...");
-            match Self::connect_docker(&self.config).await {
-                Ok((client, info)) => {
-                    info!(
-                        "Connected to Docker: {} (API: {})",
-                        info.version, info.api_version
-                    );
-                    self.docker_client = Some(client);
-                    self.state.set_docker_connected(true, info);
-                    self.state
-                        .add_notification("Connected to Docker", NotificationLevel::Success);
+    /// Refresh all data from Docker (blocking, used for initial load)
+    async fn refresh_data_once(&mut self) {
+        let had_client = self.docker_client.is_some();
+        let result =
+            DataRefreshResult::gather(self.docker_client.clone(), self.config.clone()).await;
+        self.apply_refresh_result(result, had_client);
+        self.last_data_refresh = std::time::Instant::now();
+    }
+
+    /// Request a background data refresh
+    fn request_data_refresh(&mut self) {
+        self.last_data_refresh = std::time::Instant::now();
+        if !self.data_refresh_gate.request() {
+            return;
+        }
+
+        let (tx, rx) = mpsc::channel(1);
+        let had_client = self.docker_client.is_some();
+        self.data_refresh_handle = Some(DataRefreshHandle { rx, had_client });
+
+        let client = self.docker_client.clone();
+        let config = self.config.clone();
+
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("Failed to create runtime");
+
+            rt.block_on(async move {
+                let result = DataRefreshResult::gather(client, config).await;
+                let _ = tx.send(result).await;
+            });
+        });
+    }
+
+    /// Check for completed data refreshes
+    async fn check_data_refresh(&mut self) {
+        let mut received: Option<(bool, Option<DataRefreshResult>)> = None;
+        if let Some(handle) = &mut self.data_refresh_handle {
+            match tokio::time::timeout(Duration::from_millis(1), handle.rx.recv()).await {
+                Ok(Some(result)) => {
+                    received = Some((handle.had_client, Some(result)));
                 }
-                Err(e) => {
-                    // Still can't connect, skip refresh
-                    warn!("Connection attempt failed: {}", e);
-                    return;
+                Ok(None) => {
+                    received = Some((handle.had_client, None));
                 }
+                Err(_) => {}
             }
         }
 
-        if let Some(client) = &self.docker_client {
-            debug!("Refreshing data from Docker");
-
-            // Check if Docker is still reachable
-            match client.ping().await {
-                Ok(_) => {
-                    // Reconnected after being disconnected
-                    if !self.state.docker_connected {
-                        info!("Docker connection restored");
-                        self.state.docker_connected = true;
-                        self.state.add_notification(
-                            "Docker connection restored",
-                            NotificationLevel::Success,
-                        );
-                    }
-                }
-                Err(e) => {
-                    // Lost connection - clear the client so we try to reconnect next time
-                    if self.state.docker_connected {
-                        warn!("Lost connection to Docker: {}", e);
-                        self.state.docker_connected = false;
-                        self.state.add_notification(
-                            "Lost connection to Docker",
-                            NotificationLevel::Error,
-                        );
-                    }
-                    self.docker_client = None;
-                    return; // Skip data refresh if not connected
-                }
+        if let Some((had_client, result)) = received {
+            self.data_refresh_handle = None;
+            if let Some(result) = result {
+                self.apply_refresh_result(result, had_client);
             }
-
-            // Fetch containers
-            match client.list_containers(true).await {
-                Ok(containers) => {
-                    self.state.update_containers(containers);
-                    debug!("Loaded {} containers", self.state.containers.len());
-                }
-                Err(e) => {
-                    warn!("Failed to load containers: {}", e);
-                }
+            if self.data_refresh_gate.complete() {
+                self.request_data_refresh();
             }
+        }
+    }
 
-            // Fetch images
-            match client.list_images(true).await {
-                Ok(images) => {
-                    self.state.update_images(images);
-                    debug!("Loaded {} images", self.state.images.len());
+    fn apply_refresh_result(&mut self, result: DataRefreshResult, had_client: bool) {
+        match result.client {
+            Some(client) => {
+                let info = result
+                    .info
+                    .unwrap_or_else(|| client.connection_info().clone());
+                if !self.state.docker_connected {
+                    let message = if had_client {
+                        "Docker connection restored"
+                    } else {
+                        "Connected to Docker"
+                    };
+                    self.state
+                        .add_notification(message, NotificationLevel::Success);
                 }
-                Err(e) => {
-                    warn!("Failed to load images: {}", e);
-                }
+                self.state.set_docker_connected(true, info);
+                self.docker_client = Some(client);
+                result.data.apply(&mut self.state);
             }
-
-            // Fetch volumes
-            match client.list_volumes().await {
-                Ok(volumes) => {
-                    self.state.update_volumes(volumes);
-                    debug!("Loaded {} volumes", self.state.volumes.len());
+            None => {
+                if self.state.docker_connected {
+                    self.state.docker_connected = false;
+                    self.state.add_notification(
+                        "Lost connection to Docker",
+                        NotificationLevel::Error,
+                    );
                 }
-                Err(e) => {
-                    warn!("Failed to load volumes: {}", e);
-                }
-            }
-
-            // Fetch networks
-            match client.list_networks().await {
-                Ok(networks) => {
-                    self.state.update_networks(networks);
-                    debug!("Loaded {} networks", self.state.networks.len());
-                }
-                Err(e) => {
-                    warn!("Failed to load networks: {}", e);
-                }
-            }
-
-            // Fetch disk usage
-            match client.get_disk_usage().await {
-                Ok(disk_usage) => {
-                    self.state.update_disk_usage(disk_usage);
-                    debug!("Loaded disk usage");
-                }
-                Err(e) => {
-                    warn!("Failed to load disk usage: {}", e);
-                }
+                self.docker_client = None;
             }
         }
     }
@@ -735,7 +907,7 @@ impl App {
                     info!("Image {} removed", id);
                     self.state
                         .add_notification("Image removed", NotificationLevel::Success);
-                    self.refresh_data().await;
+                    self.request_data_refresh();
                 }
                 Err(e) => {
                     error!("Failed to remove image {}: {}", id, e);
@@ -760,7 +932,7 @@ impl App {
                         format!("Pruned images, reclaimed {}", size_str),
                         NotificationLevel::Success,
                     );
-                    self.refresh_data().await;
+                    self.request_data_refresh();
                 }
                 Err(e) => {
                     error!("Failed to prune images: {}", e);
@@ -782,7 +954,7 @@ impl App {
                     info!("Volume {} removed", name);
                     self.state
                         .add_notification("Volume removed", NotificationLevel::Success);
-                    self.refresh_data().await;
+                    self.request_data_refresh();
                 }
                 Err(e) => {
                     error!("Failed to remove volume {}: {}", name, e);
@@ -807,7 +979,7 @@ impl App {
                         format!("Pruned volumes, reclaimed {}", size_str),
                         NotificationLevel::Success,
                     );
-                    self.refresh_data().await;
+                    self.request_data_refresh();
                 }
                 Err(e) => {
                     error!("Failed to prune volumes: {}", e);
@@ -829,7 +1001,7 @@ impl App {
                     info!("Network {} removed", id);
                     self.state
                         .add_notification("Network removed", NotificationLevel::Success);
-                    self.refresh_data().await;
+                    self.request_data_refresh();
                 }
                 Err(e) => {
                     error!("Failed to remove network {}: {}", id, e);
@@ -853,7 +1025,7 @@ impl App {
                         format!("Pruned {} networks", count),
                         NotificationLevel::Success,
                     );
-                    self.refresh_data().await;
+                    self.request_data_refresh();
                 }
                 Err(e) => {
                     error!("Failed to prune networks: {}", e);
@@ -984,7 +1156,7 @@ impl App {
                 self.state.add_notification(message, level);
 
                 // Refresh data to show updated disk usage
-                self.refresh_data().await;
+                self.request_data_refresh();
             }
         }
     }
@@ -1689,7 +1861,9 @@ fn exec_tick_rate(exec_focused: bool) -> Duration {
 #[cfg(test)]
 mod tests {
     // Note: Most tests would require async runtime and Docker
-    use super::{compute_exec_pane_size, exec_tick_rate, format_exec_start_status};
+    use super::{
+        compute_exec_pane_size, exec_tick_rate, format_exec_start_status, RefreshGate,
+    };
     use std::time::Duration;
 
     #[test]
@@ -1708,5 +1882,45 @@ mod tests {
     fn exec_tick_rate_changes_with_focus() {
         assert_eq!(exec_tick_rate(true), Duration::from_millis(50));
         assert_eq!(exec_tick_rate(false), Duration::from_millis(250));
+    }
+
+    #[test]
+    fn refresh_gate_starts_when_idle() {
+        let mut gate = RefreshGate::default();
+
+        assert!(gate.request());
+        assert!(gate.in_flight);
+        assert!(!gate.pending);
+    }
+
+    #[test]
+    fn refresh_gate_queues_when_in_flight() {
+        let mut gate = RefreshGate::default();
+
+        assert!(gate.request());
+        assert!(!gate.request());
+        assert!(gate.in_flight);
+        assert!(gate.pending);
+    }
+
+    #[test]
+    fn refresh_gate_completes_without_pending() {
+        let mut gate = RefreshGate::default();
+
+        assert!(gate.request());
+        assert!(!gate.complete());
+        assert!(!gate.in_flight);
+        assert!(!gate.pending);
+    }
+
+    #[test]
+    fn refresh_gate_completes_with_pending() {
+        let mut gate = RefreshGate::default();
+
+        assert!(gate.request());
+        assert!(!gate.request());
+        assert!(gate.complete());
+        assert!(!gate.in_flight);
+        assert!(!gate.pending);
     }
 }
