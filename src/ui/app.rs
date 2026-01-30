@@ -1595,7 +1595,7 @@ impl UiApp {
 
     /// Render the footer
     fn render_footer(&self, frame: &mut Frame, area: Rect) {
-        let help_text = if self.state.log_view.is_some() {
+        let base_text = if self.state.log_view.is_some() {
             Cow::Borrowed(" [↑/↓]Scroll [r]Refresh [f]Follow [/]Search [s]Save [q]Close ")
         } else if self.state.detail_view.is_some() {
             Cow::Borrowed(" [↑/↓]Scroll [q]Close ")
@@ -1615,6 +1615,18 @@ impl UiApp {
             Cow::Borrowed(" [↑/↓]Select [d]Delete [p]Prune [?]Help [q]Quit ")
         } else {
             Cow::Borrowed(" [←/→ or 1-6]:Switch Tabs | [?]:Help | [q]:Quit ")
+        };
+
+        let help_text = if self.state.exec_view.is_some()
+            && self.state.log_view.is_none()
+            && self.state.detail_view.is_none()
+            && self.state.image_detail_view.is_none()
+            && self.state.confirm_dialog.is_none()
+            && !self.state.show_help
+        {
+            Cow::Owned(format!("{base_text}[Ctrl+E]Exec Focus "))
+        } else {
+            base_text
         };
 
         let style = if self.state.confirm_dialog.is_some() {
@@ -1865,5 +1877,35 @@ mod tests {
         ));
 
         assert!(matches!(action, UiAction::ExecContainer(_)));
+    }
+
+    #[test]
+    fn exec_footer_includes_focus_hint() {
+        let backend = TestBackend::new(120, 10);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut state = AppState::default();
+        state.current_tab = Tab::Containers;
+        state.containers = vec![crate::core::ContainerSummary::default()];
+        state.exec_view = Some(crate::state::ExecViewState {
+            container_id: "id".into(),
+            container_name: "web".into(),
+            focus: true,
+            status: "Starting".into(),
+            screen_lines: vec![],
+        });
+
+        let app = UiApp::new(state);
+        terminal.draw(|f| app.draw(f)).unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let footer_line: String = (0..buffer.area.width)
+            .filter_map(|x| buffer.cell((x, buffer.area.height - 1)).map(|c| c.symbol().to_string()))
+            .collect::<Vec<_>>()
+            .join("");
+
+        assert!(
+            footer_line.contains("Ctrl+E"),
+            "expected footer to include exec focus hint"
+        );
     }
 }
