@@ -29,7 +29,7 @@ pub fn render_exec_panel(frame: &mut Frame, area: Rect, state: &ExecViewState) {
     frame.render_widget(block, area);
 
     let lines: Vec<Line> = if state.screen_lines.is_empty() {
-        vec![Line::from("Starting exec...")]
+        vec![Line::from(format!("{}...", state.status))]
     } else {
         state
             .screen_lines
@@ -68,5 +68,36 @@ mod tests {
         let buffer = terminal.backend().buffer();
         let cell = buffer.cell((0, 0)).expect("cell at 0,0");
         assert!(!cell.symbol().is_empty());
+    }
+
+    #[test]
+    fn renders_exec_placeholder_uses_status() {
+        let backend = TestBackend::new(40, 8);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let state = ExecViewState {
+            container_id: "id".into(),
+            container_name: "web".into(),
+            focus: true,
+            status: "Starting |".into(),
+            screen_lines: vec![],
+        };
+
+        terminal
+            .draw(|f| render_exec_panel(f, f.area(), &state))
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let mut found = false;
+        for y in 0..buffer.area.height {
+            let line: String = (0..buffer.area.width)
+                .filter_map(|x| buffer.cell((x, y)).map(|c| c.symbol().to_string()))
+                .collect::<Vec<_>>()
+                .join("");
+            if line.contains("Starting |...") {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "expected placeholder to include status text");
     }
 }
