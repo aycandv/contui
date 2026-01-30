@@ -7,14 +7,22 @@ use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 use std::io;
+use std::pin::Pin;
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
 
 use crate::config::Config;
-use crate::core::{ConnectionInfo, NotificationLevel, Result as ContuiResult};
-use crate::docker::{DockerClient, LogEntry};
+use crate::core::{
+    ConnectionInfo, ContainerSummary, ImageSummary, NetworkSummary, NotificationLevel,
+    Result as ContuiResult, VolumeSummary,
+};
+use crate::docker::exec::ExecStart;
+use crate::docker::{select_exec_command, DockerClient, LogEntry, SystemDiskUsage};
+use crate::exec::spinner;
 use crate::state::AppState;
 use crate::ui::{UiAction, UiApp};
+use futures::StreamExt;
+use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc;
 
 /// Main application struct
@@ -31,6 +39,229 @@ pub struct App {
     stats_fetch_rx: Option<mpsc::Receiver<ContuiResult<crate::docker::StatsEntry>>>,
     /// Last time we auto-fetched stats (for follow mode)
     last_stats_fetch: Option<std::time::Instant>,
+    /// Channel receiver for data refresh results
+    data_refresh_handle: Option<DataRefreshHandle>,
+    /// Gate for data refresh requests
+    data_refresh_gate: RefreshGate,
+    /// Last time we requested a data refresh
+    last_data_refresh: std::time::Instant,
+    /// Exec runtime state
+    exec_runtime: Option<ExecRuntime>,
+    /// Channel receiver for exec start results
+    exec_start_rx: Option<mpsc::Receiver<ExecStartResult>>,
+    /// Pending exec start metadata (for spinner/status)
+    exec_start_pending: Option<ExecStartPending>,
+    /// Track last terminal size for exec resize
+    last_terminal_size: Option<(u16, u16)>,
+}
+
+enum ExecOutput {
+    Bytes(Vec<u8>),
+    End,
+}
+
+struct ExecRuntime {
+    exec_id: String,
+    container_id: String,
+    input: Pin<Box<dyn tokio::io::AsyncWrite + Send>>,
+    parser: vt100::Parser,
+    output_rx: mpsc::Receiver<ExecOutput>,
+    size: (u16, u16),
+}
+
+struct ExecStartPending {
+    container_id: String,
+    spinner_index: usize,
+}
+
+enum ExecStartResult {
+    Started {
+        exec: ExecStart,
+        container_id: String,
+        container_name: String,
+        size: (u16, u16),
+    },
+    Failed {
+        container_id: String,
+        message: String,
+    },
+}
+
+#[derive(Debug, Default)]
+struct RefreshGate {
+    in_flight: bool,
+    pending: bool,
+}
+
+impl RefreshGate {
+    fn request(&mut self) -> bool {
+        if self.in_flight {
+            self.pending = true;
+            false
+        } else {
+            self.in_flight = true;
+            true
+        }
+    }
+
+    fn complete(&mut self) -> bool {
+        self.in_flight = false;
+        if self.pending {
+            self.pending = false;
+            true
+        } else {
+            false
+        }
+    }
+}
+
+struct DataRefreshHandle {
+    rx: mpsc::Receiver<DataRefreshResult>,
+    had_client: bool,
+}
+
+#[derive(Debug, Default)]
+struct DataRefreshData {
+    containers: Option<Vec<ContainerSummary>>,
+    images: Option<Vec<ImageSummary>>,
+    volumes: Option<Vec<VolumeSummary>>,
+    networks: Option<Vec<NetworkSummary>>,
+    disk_usage: Option<SystemDiskUsage>,
+}
+
+impl DataRefreshData {
+    async fn fetch(client: &DockerClient) -> Self {
+        let containers = match client.list_containers(true).await {
+            Ok(containers) => {
+                debug!("Loaded {} containers", containers.len());
+                Some(containers)
+            }
+            Err(e) => {
+                warn!("Failed to load containers: {}", e);
+                None
+            }
+        };
+
+        let images = match client.list_images(true).await {
+            Ok(images) => {
+                debug!("Loaded {} images", images.len());
+                Some(images)
+            }
+            Err(e) => {
+                warn!("Failed to load images: {}", e);
+                None
+            }
+        };
+
+        let volumes = match client.list_volumes().await {
+            Ok(volumes) => {
+                debug!("Loaded {} volumes", volumes.len());
+                Some(volumes)
+            }
+            Err(e) => {
+                warn!("Failed to load volumes: {}", e);
+                None
+            }
+        };
+
+        let networks = match client.list_networks().await {
+            Ok(networks) => {
+                debug!("Loaded {} networks", networks.len());
+                Some(networks)
+            }
+            Err(e) => {
+                warn!("Failed to load networks: {}", e);
+                None
+            }
+        };
+
+        let disk_usage = match client.get_disk_usage().await {
+            Ok(disk_usage) => {
+                debug!("Loaded disk usage");
+                Some(disk_usage)
+            }
+            Err(e) => {
+                warn!("Failed to load disk usage: {}", e);
+                None
+            }
+        };
+
+        Self {
+            containers,
+            images,
+            volumes,
+            networks,
+            disk_usage,
+        }
+    }
+
+    fn apply(self, state: &mut AppState) {
+        if let Some(containers) = self.containers {
+            state.update_containers(containers);
+        }
+        if let Some(images) = self.images {
+            state.update_images(images);
+        }
+        if let Some(volumes) = self.volumes {
+            state.update_volumes(volumes);
+        }
+        if let Some(networks) = self.networks {
+            state.update_networks(networks);
+        }
+        if let Some(disk_usage) = self.disk_usage {
+            state.update_disk_usage(disk_usage);
+        }
+    }
+}
+
+struct DataRefreshResult {
+    client: Option<DockerClient>,
+    info: Option<ConnectionInfo>,
+    data: DataRefreshData,
+}
+
+impl DataRefreshResult {
+    async fn gather(client: Option<DockerClient>, config: Config) -> Self {
+        if let Some(client) = client {
+            debug!("Refreshing data from Docker");
+            if let Err(e) = client.ping().await {
+                warn!("Lost connection to Docker: {}", e);
+                return Self::disconnected();
+            }
+
+            let data = DataRefreshData::fetch(&client).await;
+            let info = client.connection_info().clone();
+            return Self {
+                client: Some(client),
+                info: Some(info),
+                data,
+            };
+        }
+
+        info!("No Docker client, attempting to connect...");
+        match App::connect_docker(&config).await {
+            Ok((client, info)) => {
+                let data = DataRefreshData::fetch(&client).await;
+                Self {
+                    client: Some(client),
+                    info: Some(info),
+                    data,
+                }
+            }
+            Err(e) => {
+                warn!("Connection attempt failed: {}", e);
+                Self::disconnected()
+            }
+        }
+    }
+
+    fn disconnected() -> Self {
+        Self {
+            client: None,
+            info: None,
+            data: DataRefreshData::default(),
+        }
+    }
 }
 
 impl App {
@@ -61,6 +292,13 @@ impl App {
             last_log_fetch: None,
             stats_fetch_rx: None,
             last_stats_fetch: None,
+            data_refresh_handle: None,
+            data_refresh_gate: RefreshGate::default(),
+            last_data_refresh: std::time::Instant::now(),
+            exec_runtime: None,
+            exec_start_rx: None,
+            exec_start_pending: None,
+            last_terminal_size: None,
         })
     }
 
@@ -84,7 +322,7 @@ impl App {
         let mut terminal = setup_terminal()?;
 
         // Initial data load
-        self.refresh_data().await;
+        self.refresh_data_once().await;
 
         // Main event loop
         let result = self.run_event_loop(&mut terminal).await;
@@ -101,12 +339,17 @@ impl App {
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     ) -> Result<()> {
         let mut last_tick = std::time::Instant::now();
-        let mut last_data_refresh = std::time::Instant::now();
-        let tick_rate = Duration::from_millis(250);
         let data_refresh_rate = Duration::from_secs(2); // Refresh data every 2 seconds
         let mut should_quit;
 
         loop {
+            let exec_focused = self
+                .state
+                .exec_view
+                .as_ref()
+                .map(|view| view.focus)
+                .unwrap_or(false);
+            let tick_rate = exec_tick_rate(exec_focused);
             // Render the UI
             let ui_app = UiApp::new(self.state.clone());
             terminal.draw(|f| ui_app.draw(f))?;
@@ -143,6 +386,9 @@ impl App {
 
                 // Check for completed stats fetches
                 self.check_stats_fetch().await;
+
+                // Check for completed data refreshes
+                self.check_data_refresh().await;
 
                 // Auto-refresh logs when in follow mode (every 2 seconds)
                 if let Some(ref log_view) = self.state.log_view {
@@ -198,9 +444,25 @@ impl App {
                 }
 
                 // Refresh data periodically (every 2 seconds)
-                if last_data_refresh.elapsed() >= data_refresh_rate {
-                    self.refresh_data().await;
-                    last_data_refresh = std::time::Instant::now();
+                if self.last_data_refresh.elapsed() >= data_refresh_rate {
+                    self.request_data_refresh();
+                }
+
+                // Check for exec start completion
+                self.check_exec_start().await;
+                // Tick exec spinner while starting
+                self.tick_exec_spinner();
+
+                // Check for exec output
+                self.check_exec_output().await;
+
+                // Resize exec session if terminal size changed
+                if self.state.exec_view.is_some() {
+                    let current = self.state.terminal_size;
+                    if self.last_terminal_size != Some(current) {
+                        self.resize_exec_if_needed().await;
+                        self.last_terminal_size = Some(current);
+                    }
                 }
                 // Clear old notifications (older than 3 seconds)
                 self.state.clear_old_notifications(3);
@@ -312,6 +574,16 @@ impl App {
                     .add_notification("Loading details...", NotificationLevel::Info);
                 self.fetch_container_details(id).await;
             }
+            UiAction::ExecContainer(id) => {
+                self.start_exec_for_container(&id).await;
+            }
+            UiAction::StartContainerAndExec(id) => {
+                self.start_container(&id).await;
+                self.start_exec_for_container(&id).await;
+            }
+            UiAction::ExecInput(bytes) => {
+                self.write_exec_input(bytes).await;
+            }
             UiAction::RemoveImage(id) => {
                 self.remove_image(&id).await;
             }
@@ -366,7 +638,7 @@ impl App {
                     info!("Container {} started", id);
                     self.state
                         .add_notification("Container started", NotificationLevel::Success);
-                    self.refresh_data().await;
+                    self.request_data_refresh();
                 }
                 Err(e) => {
                     error!("Failed to start container {}: {}", id, e);
@@ -391,7 +663,7 @@ impl App {
                     info!("Container {} stopped", id);
                     self.state
                         .add_notification("Container stopped", NotificationLevel::Success);
-                    self.refresh_data().await;
+                    self.request_data_refresh();
                 }
                 Err(e) => {
                     error!("Failed to stop container {}: {}", id, e);
@@ -416,7 +688,7 @@ impl App {
                     info!("Container {} restarted", id);
                     self.state
                         .add_notification("Container restarted", NotificationLevel::Success);
-                    self.refresh_data().await;
+                    self.request_data_refresh();
                 }
                 Err(e) => {
                     error!("Failed to restart container {}: {}", id, e);
@@ -441,7 +713,7 @@ impl App {
                     info!("Container {} paused", id);
                     self.state
                         .add_notification("Container paused", NotificationLevel::Success);
-                    self.refresh_data().await;
+                    self.request_data_refresh();
                 }
                 Err(e) => {
                     error!("Failed to pause container {}: {}", id, e);
@@ -466,7 +738,7 @@ impl App {
                     info!("Container {} unpaused", id);
                     self.state
                         .add_notification("Container unpaused", NotificationLevel::Success);
-                    self.refresh_data().await;
+                    self.request_data_refresh();
                 }
                 Err(e) => {
                     error!("Failed to unpause container {}: {}", id, e);
@@ -491,7 +763,7 @@ impl App {
                     info!("Container {} killed", id);
                     self.state
                         .add_notification("Container killed", NotificationLevel::Success);
-                    self.refresh_data().await;
+                    self.request_data_refresh();
                 }
                 Err(e) => {
                     error!("Failed to kill container {}: {}", id, e);
@@ -516,7 +788,7 @@ impl App {
                     info!("Container {} removed", id);
                     self.state
                         .add_notification("Container removed", NotificationLevel::Success);
-                    self.refresh_data().await;
+                    self.request_data_refresh();
                 }
                 Err(e) => {
                     error!("Failed to remove container {}: {}", id, e);
@@ -532,114 +804,94 @@ impl App {
         }
     }
 
-    /// Refresh all data from Docker
-    async fn refresh_data(&mut self) {
-        // If we don't have a client, try to connect
-        if self.docker_client.is_none() {
-            info!("No Docker client, attempting to connect...");
-            match Self::connect_docker(&self.config).await {
-                Ok((client, info)) => {
-                    info!(
-                        "Connected to Docker: {} (API: {})",
-                        info.version, info.api_version
-                    );
-                    self.docker_client = Some(client);
-                    self.state.set_docker_connected(true, info);
-                    self.state
-                        .add_notification("Connected to Docker", NotificationLevel::Success);
+    /// Refresh all data from Docker (blocking, used for initial load)
+    async fn refresh_data_once(&mut self) {
+        let had_client = self.docker_client.is_some();
+        let result =
+            DataRefreshResult::gather(self.docker_client.clone(), self.config.clone()).await;
+        self.apply_refresh_result(result, had_client);
+        self.last_data_refresh = std::time::Instant::now();
+    }
+
+    /// Request a background data refresh
+    fn request_data_refresh(&mut self) {
+        self.last_data_refresh = std::time::Instant::now();
+        if !self.data_refresh_gate.request() {
+            return;
+        }
+
+        let (tx, rx) = mpsc::channel(1);
+        let had_client = self.docker_client.is_some();
+        self.data_refresh_handle = Some(DataRefreshHandle { rx, had_client });
+
+        let client = self.docker_client.clone();
+        let config = self.config.clone();
+
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("Failed to create runtime");
+
+            rt.block_on(async move {
+                let result = DataRefreshResult::gather(client, config).await;
+                let _ = tx.send(result).await;
+            });
+        });
+    }
+
+    /// Check for completed data refreshes
+    async fn check_data_refresh(&mut self) {
+        let mut received: Option<(bool, Option<DataRefreshResult>)> = None;
+        if let Some(handle) = &mut self.data_refresh_handle {
+            match tokio::time::timeout(Duration::from_millis(1), handle.rx.recv()).await {
+                Ok(Some(result)) => {
+                    received = Some((handle.had_client, Some(result)));
                 }
-                Err(e) => {
-                    // Still can't connect, skip refresh
-                    warn!("Connection attempt failed: {}", e);
-                    return;
+                Ok(None) => {
+                    received = Some((handle.had_client, None));
                 }
+                Err(_) => {}
             }
         }
 
-        if let Some(client) = &self.docker_client {
-            debug!("Refreshing data from Docker");
-
-            // Check if Docker is still reachable
-            match client.ping().await {
-                Ok(_) => {
-                    // Reconnected after being disconnected
-                    if !self.state.docker_connected {
-                        info!("Docker connection restored");
-                        self.state.docker_connected = true;
-                        self.state.add_notification(
-                            "Docker connection restored",
-                            NotificationLevel::Success,
-                        );
-                    }
-                }
-                Err(e) => {
-                    // Lost connection - clear the client so we try to reconnect next time
-                    if self.state.docker_connected {
-                        warn!("Lost connection to Docker: {}", e);
-                        self.state.docker_connected = false;
-                        self.state.add_notification(
-                            "Lost connection to Docker",
-                            NotificationLevel::Error,
-                        );
-                    }
-                    self.docker_client = None;
-                    return; // Skip data refresh if not connected
-                }
+        if let Some((had_client, result)) = received {
+            self.data_refresh_handle = None;
+            if let Some(result) = result {
+                self.apply_refresh_result(result, had_client);
             }
-
-            // Fetch containers
-            match client.list_containers(true).await {
-                Ok(containers) => {
-                    self.state.update_containers(containers);
-                    debug!("Loaded {} containers", self.state.containers.len());
-                }
-                Err(e) => {
-                    warn!("Failed to load containers: {}", e);
-                }
+            if self.data_refresh_gate.complete() {
+                self.request_data_refresh();
             }
+        }
+    }
 
-            // Fetch images
-            match client.list_images(true).await {
-                Ok(images) => {
-                    self.state.update_images(images);
-                    debug!("Loaded {} images", self.state.images.len());
+    fn apply_refresh_result(&mut self, result: DataRefreshResult, had_client: bool) {
+        match result.client {
+            Some(client) => {
+                let info = result
+                    .info
+                    .unwrap_or_else(|| client.connection_info().clone());
+                if !self.state.docker_connected {
+                    let message = if had_client {
+                        "Docker connection restored"
+                    } else {
+                        "Connected to Docker"
+                    };
+                    self.state
+                        .add_notification(message, NotificationLevel::Success);
                 }
-                Err(e) => {
-                    warn!("Failed to load images: {}", e);
-                }
+                self.state.set_docker_connected(true, info);
+                self.docker_client = Some(client);
+                result.data.apply(&mut self.state);
             }
-
-            // Fetch volumes
-            match client.list_volumes().await {
-                Ok(volumes) => {
-                    self.state.update_volumes(volumes);
-                    debug!("Loaded {} volumes", self.state.volumes.len());
+            None => {
+                if self.state.docker_connected {
+                    self.state.docker_connected = false;
+                    self.state
+                        .add_notification("Lost connection to Docker", NotificationLevel::Error);
                 }
-                Err(e) => {
-                    warn!("Failed to load volumes: {}", e);
-                }
-            }
-
-            // Fetch networks
-            match client.list_networks().await {
-                Ok(networks) => {
-                    self.state.update_networks(networks);
-                    debug!("Loaded {} networks", self.state.networks.len());
-                }
-                Err(e) => {
-                    warn!("Failed to load networks: {}", e);
-                }
-            }
-
-            // Fetch disk usage
-            match client.get_disk_usage().await {
-                Ok(disk_usage) => {
-                    self.state.update_disk_usage(disk_usage);
-                    debug!("Loaded disk usage");
-                }
-                Err(e) => {
-                    warn!("Failed to load disk usage: {}", e);
-                }
+                self.docker_client = None;
             }
         }
     }
@@ -653,7 +905,7 @@ impl App {
                     info!("Image {} removed", id);
                     self.state
                         .add_notification("Image removed", NotificationLevel::Success);
-                    self.refresh_data().await;
+                    self.request_data_refresh();
                 }
                 Err(e) => {
                     error!("Failed to remove image {}: {}", id, e);
@@ -678,7 +930,7 @@ impl App {
                         format!("Pruned images, reclaimed {}", size_str),
                         NotificationLevel::Success,
                     );
-                    self.refresh_data().await;
+                    self.request_data_refresh();
                 }
                 Err(e) => {
                     error!("Failed to prune images: {}", e);
@@ -700,7 +952,7 @@ impl App {
                     info!("Volume {} removed", name);
                     self.state
                         .add_notification("Volume removed", NotificationLevel::Success);
-                    self.refresh_data().await;
+                    self.request_data_refresh();
                 }
                 Err(e) => {
                     error!("Failed to remove volume {}: {}", name, e);
@@ -725,7 +977,7 @@ impl App {
                         format!("Pruned volumes, reclaimed {}", size_str),
                         NotificationLevel::Success,
                     );
-                    self.refresh_data().await;
+                    self.request_data_refresh();
                 }
                 Err(e) => {
                     error!("Failed to prune volumes: {}", e);
@@ -747,7 +999,7 @@ impl App {
                     info!("Network {} removed", id);
                     self.state
                         .add_notification("Network removed", NotificationLevel::Success);
-                    self.refresh_data().await;
+                    self.request_data_refresh();
                 }
                 Err(e) => {
                     error!("Failed to remove network {}: {}", id, e);
@@ -771,7 +1023,7 @@ impl App {
                         format!("Pruned {} networks", count),
                         NotificationLevel::Success,
                     );
-                    self.refresh_data().await;
+                    self.request_data_refresh();
                 }
                 Err(e) => {
                     error!("Failed to prune networks: {}", e);
@@ -902,7 +1154,7 @@ impl App {
                 self.state.add_notification(message, level);
 
                 // Refresh data to show updated disk usage
-                self.refresh_data().await;
+                self.request_data_refresh();
             }
         }
     }
@@ -1225,6 +1477,313 @@ impl App {
             }
         }
     }
+
+    // ==================== Exec Handling ====================
+
+    async fn start_exec_for_container(&mut self, id: &str) {
+        if let Some(runtime) = &self.exec_runtime {
+            if runtime.container_id == id {
+                self.state.close_exec_view();
+                self.exec_runtime = None;
+                return;
+            }
+            self.state.add_notification(
+                "Exec already active for another container",
+                NotificationLevel::Warning,
+            );
+            return;
+        }
+
+        if let Some(pending) = &self.exec_start_pending {
+            if pending.container_id == id {
+                self.state.close_exec_view();
+                self.exec_start_pending = None;
+                self.exec_start_rx = None;
+                return;
+            }
+            self.state.add_notification(
+                "Exec already starting for another container",
+                NotificationLevel::Warning,
+            );
+            return;
+        }
+
+        let client = match &self.docker_client {
+            Some(client) => client.clone(),
+            None => {
+                self.state
+                    .add_notification("Docker not connected", NotificationLevel::Error);
+                return;
+            }
+        };
+
+        let container_name = self
+            .state
+            .containers
+            .iter()
+            .find(|c| c.id == id)
+            .and_then(|c| c.names.first())
+            .cloned()
+            .unwrap_or_else(|| id.chars().take(12).collect::<String>());
+        let (cols, rows) =
+            compute_exec_pane_size(self.state.terminal_size.0, self.state.terminal_size.1);
+
+        self.state
+            .open_exec_view(id.to_string(), container_name.clone());
+        self.state
+            .set_exec_status(format_exec_start_status(spinner::frame(0)));
+
+        self.exec_start_pending = Some(ExecStartPending {
+            container_id: id.to_string(),
+            spinner_index: 0,
+        });
+
+        let (tx, rx) = mpsc::channel(1);
+        self.exec_start_rx = Some(rx);
+
+        let container_id = id.to_string();
+        tokio::spawn(async move {
+            let defaults = match client.exec_defaults(&container_id).await {
+                Ok(d) => d,
+                Err(e) => {
+                    let _ = tx
+                        .send(ExecStartResult::Failed {
+                            container_id,
+                            message: format!("Failed to inspect container: {e}"),
+                        })
+                        .await;
+                    return;
+                }
+            };
+
+            if !defaults.running {
+                let _ = tx
+                    .send(ExecStartResult::Failed {
+                        container_id: defaults.container_id,
+                        message: "Container is not running".to_string(),
+                    })
+                    .await;
+                return;
+            }
+
+            let cmd = select_exec_command(&defaults.entrypoint, &defaults.cmd);
+            let exec = match client
+                .start_exec_session(&defaults.container_id, cmd, cols, rows)
+                .await
+            {
+                Ok(exec) => exec,
+                Err(e) => {
+                    let _ = tx
+                        .send(ExecStartResult::Failed {
+                            container_id: defaults.container_id,
+                            message: format!("Failed to start exec: {e}"),
+                        })
+                        .await;
+                    return;
+                }
+            };
+
+            let container_name = if defaults.container_name.is_empty() {
+                container_name
+            } else {
+                defaults.container_name
+            };
+
+            let _ = tx
+                .send(ExecStartResult::Started {
+                    exec,
+                    container_id: defaults.container_id,
+                    container_name,
+                    size: (cols, rows),
+                })
+                .await;
+        });
+    }
+
+    async fn write_exec_input(&mut self, bytes: Vec<u8>) {
+        if let Some(runtime) = &mut self.exec_runtime {
+            if let Err(e) = runtime.input.write_all(&bytes).await {
+                self.state
+                    .add_notification(format!("Exec input failed: {e}"), NotificationLevel::Error);
+            }
+        }
+    }
+
+    async fn check_exec_start(&mut self) {
+        if let Some(rx) = &mut self.exec_start_rx {
+            match tokio::time::timeout(Duration::from_millis(1), rx.recv()).await {
+                Ok(Some(result)) => {
+                    self.exec_start_rx = None;
+                    match result {
+                        ExecStartResult::Started {
+                            exec,
+                            container_id,
+                            container_name,
+                            size,
+                        } => {
+                            let matches_pending = self
+                                .exec_start_pending
+                                .as_ref()
+                                .map(|p| p.container_id == container_id)
+                                .unwrap_or(false);
+                            if !matches_pending {
+                                return;
+                            }
+                            self.exec_start_pending = None;
+
+                            let (tx, rx) = mpsc::channel(64);
+                            let mut output = exec.output;
+                            tokio::spawn(async move {
+                                while let Some(item) = output.next().await {
+                                    match item {
+                                        Ok(log) => {
+                                            let bytes = match log {
+                                                bollard::container::LogOutput::StdOut {
+                                                    message,
+                                                } => message.to_vec(),
+                                                bollard::container::LogOutput::StdErr {
+                                                    message,
+                                                } => message.to_vec(),
+                                                bollard::container::LogOutput::Console {
+                                                    message,
+                                                } => message.to_vec(),
+                                                bollard::container::LogOutput::StdIn {
+                                                    message,
+                                                } => message.to_vec(),
+                                            };
+                                            if tx.send(ExecOutput::Bytes(bytes)).await.is_err() {
+                                                break;
+                                            }
+                                        }
+                                        Err(_) => {
+                                            let _ = tx.send(ExecOutput::End).await;
+                                            return;
+                                        }
+                                    }
+                                }
+                                let _ = tx.send(ExecOutput::End).await;
+                            });
+
+                            let parser = vt100::Parser::new(size.1, size.0, 0);
+                            if let Some(exec_view) = &mut self.state.exec_view {
+                                exec_view.container_id = container_id.clone();
+                                exec_view.container_name = container_name;
+                            }
+                            self.state.set_exec_status("Running");
+                            self.state
+                                .add_notification("Exec started", NotificationLevel::Info);
+
+                            self.exec_runtime = Some(ExecRuntime {
+                                exec_id: exec.exec_id,
+                                container_id,
+                                input: exec.input,
+                                parser,
+                                output_rx: rx,
+                                size,
+                            });
+                        }
+                        ExecStartResult::Failed {
+                            container_id,
+                            message,
+                        } => {
+                            let matches_pending = self
+                                .exec_start_pending
+                                .as_ref()
+                                .map(|p| p.container_id == container_id)
+                                .unwrap_or(false);
+                            if !matches_pending {
+                                return;
+                            }
+                            self.exec_start_pending = None;
+                            self.state.set_exec_status(format!("Failed: {}", message));
+                            self.state.add_notification(
+                                format!("Exec failed: {}", message),
+                                NotificationLevel::Error,
+                            );
+                        }
+                    }
+                }
+                Ok(None) => {
+                    self.exec_start_rx = None;
+                    if self.exec_start_pending.is_some() {
+                        self.exec_start_pending = None;
+                        self.state
+                            .set_exec_status("Failed: exec start canceled".to_string());
+                        self.state
+                            .add_notification("Exec start canceled", NotificationLevel::Error);
+                    }
+                }
+                Err(_) => {}
+            }
+        }
+    }
+
+    fn tick_exec_spinner(&mut self) {
+        if let Some(pending) = &mut self.exec_start_pending {
+            let frame = spinner::frame(pending.spinner_index);
+            self.state.set_exec_status(format_exec_start_status(frame));
+            pending.spinner_index = spinner::next_index(pending.spinner_index);
+        }
+    }
+
+    async fn check_exec_output(&mut self) {
+        let mut lines: Option<Vec<String>> = None;
+        let mut cursor: Option<Option<(u16, u16)>> = None;
+        let mut end = false;
+
+        if let Some(runtime) = &mut self.exec_runtime {
+            while let Ok(msg) = runtime.output_rx.try_recv() {
+                match msg {
+                    ExecOutput::Bytes(bytes) => {
+                        runtime.parser.process(&bytes);
+                        let screen = runtime.parser.screen();
+                        let contents = screen.contents();
+                        lines = Some(contents.lines().map(|l| l.to_string()).collect());
+                        cursor = Some(if screen.hide_cursor() {
+                            None
+                        } else {
+                            Some(screen.cursor_position())
+                        });
+                    }
+                    ExecOutput::End => {
+                        end = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if let Some(lines) = lines {
+            self.state.update_exec_screen(lines, None);
+        }
+        if let Some(cursor) = cursor {
+            self.state.set_exec_cursor(cursor);
+        }
+
+        if end {
+            self.state.close_exec_view();
+            self.exec_runtime = None;
+            self.state
+                .add_notification("Exec ended", NotificationLevel::Info);
+        }
+    }
+
+    async fn resize_exec_if_needed(&mut self) {
+        let (cols, rows) =
+            compute_exec_pane_size(self.state.terminal_size.0, self.state.terminal_size.1);
+
+        if let Some(runtime) = &mut self.exec_runtime {
+            if runtime.size != (cols, rows) {
+                runtime.size = (cols, rows);
+                runtime.parser.set_size(rows, cols);
+                if let Some(client) = &self.docker_client {
+                    let _ = client
+                        .resize_exec_session(&runtime.exec_id, cols, rows)
+                        .await;
+                }
+            }
+        }
+    }
 }
 
 /// Format size in human readable format
@@ -1270,7 +1829,93 @@ fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Re
     Ok(())
 }
 
+fn compute_exec_pane_size(term_width: u16, term_height: u16) -> (u16, u16) {
+    let sidebar_width = (term_width / 5).clamp(12, 20);
+    let content_width = term_width.saturating_sub(sidebar_width);
+    let list_width = (content_width * 60) / 100;
+
+    let cols = list_width.saturating_sub(2).max(1);
+    let rows = crate::ui::components::exec_viewer::EXEC_PANEL_HEIGHT
+        .saturating_sub(2)
+        .min(term_height.saturating_sub(2))
+        .max(1);
+
+    (cols, rows)
+}
+
+fn format_exec_start_status(frame: &str) -> String {
+    format!("Starting {}", frame)
+}
+
+fn exec_tick_rate(exec_focused: bool) -> Duration {
+    if exec_focused {
+        Duration::from_millis(50)
+    } else {
+        Duration::from_millis(250)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     // Note: Most tests would require async runtime and Docker
+    use super::{compute_exec_pane_size, exec_tick_rate, format_exec_start_status, RefreshGate};
+    use std::time::Duration;
+
+    #[test]
+    fn computes_exec_pane_size() {
+        let (cols, rows) = compute_exec_pane_size(120, 30);
+        assert!(cols > 0);
+        assert!(rows > 0);
+    }
+
+    #[test]
+    fn formats_exec_start_status_with_spinner() {
+        assert_eq!(format_exec_start_status("|"), "Starting |");
+    }
+
+    #[test]
+    fn exec_tick_rate_changes_with_focus() {
+        assert_eq!(exec_tick_rate(true), Duration::from_millis(50));
+        assert_eq!(exec_tick_rate(false), Duration::from_millis(250));
+    }
+
+    #[test]
+    fn refresh_gate_starts_when_idle() {
+        let mut gate = RefreshGate::default();
+
+        assert!(gate.request());
+        assert!(gate.in_flight);
+        assert!(!gate.pending);
+    }
+
+    #[test]
+    fn refresh_gate_queues_when_in_flight() {
+        let mut gate = RefreshGate::default();
+
+        assert!(gate.request());
+        assert!(!gate.request());
+        assert!(gate.in_flight);
+        assert!(gate.pending);
+    }
+
+    #[test]
+    fn refresh_gate_completes_without_pending() {
+        let mut gate = RefreshGate::default();
+
+        assert!(gate.request());
+        assert!(!gate.complete());
+        assert!(!gate.in_flight);
+        assert!(!gate.pending);
+    }
+
+    #[test]
+    fn refresh_gate_completes_with_pending() {
+        let mut gate = RefreshGate::default();
+
+        assert!(gate.request());
+        assert!(!gate.request());
+        assert!(gate.complete());
+        assert!(!gate.in_flight);
+        assert!(!gate.pending);
+    }
 }

@@ -49,6 +49,9 @@ pub struct AppState {
     // Stats view state
     pub stats_view: Option<StatsViewState>,
 
+    // Exec view state
+    pub exec_view: Option<ExecViewState>,
+
     // Detail view state
     pub detail_view: Option<DetailViewState>,
 
@@ -99,6 +102,17 @@ pub struct StatsViewState {
     pub stats: Option<crate::docker::StatsEntry>,
     pub follow: bool,
     pub error: Option<String>,
+}
+
+/// Exec view state
+#[derive(Debug, Clone)]
+pub struct ExecViewState {
+    pub container_id: String,
+    pub container_name: String,
+    pub focus: bool,
+    pub status: String,
+    pub screen_lines: Vec<String>,
+    pub cursor: Option<(u16, u16)>,
 }
 
 /// Detail view state
@@ -192,6 +206,7 @@ impl AppState {
             notifications: vec![],
             log_view: None,
             stats_view: None,
+            exec_view: None,
             detail_view: None,
             image_detail_view: None,
             prune_dialog: None,
@@ -652,6 +667,58 @@ impl AppState {
         }
     }
 
+    // ==================== Exec View Methods ====================
+
+    /// Open exec view for a container
+    pub fn open_exec_view(&mut self, container_id: String, container_name: String) {
+        self.exec_view = Some(ExecViewState {
+            container_id,
+            container_name,
+            focus: true,
+            status: "Starting".to_string(),
+            screen_lines: vec![],
+            cursor: None,
+        });
+        // Avoid stacking bottom panels
+        self.stats_view = None;
+    }
+
+    /// Close exec view
+    pub fn close_exec_view(&mut self) {
+        self.exec_view = None;
+    }
+
+    /// Toggle exec focus
+    pub fn toggle_exec_focus(&mut self) {
+        if let Some(exec_view) = &mut self.exec_view {
+            exec_view.focus = !exec_view.focus;
+        }
+    }
+
+    /// Update exec screen buffer
+    pub fn update_exec_screen(&mut self, lines: Vec<String>, status: Option<String>) {
+        if let Some(exec_view) = &mut self.exec_view {
+            exec_view.screen_lines = lines;
+            if let Some(status) = status {
+                exec_view.status = status;
+            }
+        }
+    }
+
+    /// Set exec status text
+    pub fn set_exec_status(&mut self, status: impl Into<String>) {
+        if let Some(exec_view) = &mut self.exec_view {
+            exec_view.status = status.into();
+        }
+    }
+
+    /// Set exec cursor position
+    pub fn set_exec_cursor(&mut self, cursor: Option<(u16, u16)>) {
+        if let Some(exec_view) = &mut self.exec_view {
+            exec_view.cursor = cursor;
+        }
+    }
+
     // ==================== Detail View Methods ====================
 
     /// Open detail view for a container
@@ -838,5 +905,37 @@ mod tests {
 
         state.update_containers(containers);
         assert_eq!(state.containers.len(), 1);
+    }
+
+    #[test]
+    fn exec_view_open_close_toggle_focus() {
+        let mut state = AppState::new();
+        state.open_exec_view("abc".into(), "web".into());
+        assert!(state.exec_view.is_some());
+        let exec_view = state.exec_view.as_ref().unwrap();
+        assert!(exec_view.focus);
+        assert_eq!(exec_view.status, "Starting");
+        state.toggle_exec_focus();
+        assert!(!state.exec_view.as_ref().unwrap().focus);
+        state.close_exec_view();
+        assert!(state.exec_view.is_none());
+    }
+
+    #[test]
+    fn exec_view_set_status() {
+        let mut state = AppState::new();
+        state.open_exec_view("abc".into(), "web".into());
+        state.set_exec_status("Starting |");
+        let exec_view = state.exec_view.as_ref().unwrap();
+        assert_eq!(exec_view.status, "Starting |");
+    }
+
+    #[test]
+    fn exec_view_set_cursor() {
+        let mut state = AppState::new();
+        state.open_exec_view("abc".into(), "web".into());
+        state.set_exec_cursor(Some((2, 4)));
+        let exec_view = state.exec_view.as_ref().unwrap();
+        assert_eq!(exec_view.cursor, Some((2, 4)));
     }
 }

@@ -3,6 +3,6 @@
 pub mod app_state;
 
 pub use app_state::{
-    AppState, DetailViewState, ImageDetailViewState, LogLevelFilter, LogViewState, Notification,
-    Panel, StatsViewState,
+    AppState, DetailViewState, ExecViewState, ImageDetailViewState, LogLevelFilter, LogViewState,
+    Notification, Panel, StatsViewState,
 };

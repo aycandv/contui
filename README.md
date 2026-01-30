@@ -19,6 +19,7 @@ A powerful, fast, and intuitive Terminal User Interface (TUI) for Docker contain
 - 🔍 **Log Search & Filter**: Search logs with regex, filter by level (INFO/WARN/ERROR), and time range
 - 📈 **Container Stats**: CPU, memory, network I/O monitoring with live graphs
 - 🔎 **Detailed Inspection**: View container and image details (ports, mounts, env vars, labels, layers)
+- 🧩 **Exec Shell**: Open an interactive shell inside a container (toggle focus with Ctrl+E)
 - 💾 **System Management**: Disk usage overview and resource pruning
 - ⌨️ **Keyboard-centric**: Vim-inspired keybindings for efficient navigation
 - 🎨 **Clean UI**: Built with [Ratatui](https://github.com/ratatui/ratatui) for a modern terminal experience
@@ -135,6 +136,7 @@ contui --help
 | `l` | View logs |
 | `m` | Toggle stats panel |
 | `i` | Inspect container details |
+| `x` | Exec into container |
 
 ### Images Tab
 
@@ -178,6 +180,14 @@ When viewing container logs (`l` key):
 | `s` | Save logs to file |
 | `Home/End` | Jump to top/bottom |
 | `q/Esc` | Close log view |
+
+### Exec Pane
+
+When opening an exec shell (`x` key):
+
+| Key | Action |
+|-----|--------|
+| `Ctrl+E` | Toggle focus between UI and exec |
 
 #### Search in Logs
 

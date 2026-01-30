@@ -198,6 +198,15 @@ fn test_app_startup() {
 - [ ] Search (`/`)
 - [ ] Next/previous match (`n`/`N`)
 
+### Exec Pane
+
+- [ ] Open exec (`x`) on a running container
+- [ ] Toggle focus with `Ctrl+E`
+- [ ] Run `ls` and verify output renders
+- [ ] Run `top`/`htop` and verify full-screen TTY works
+- [ ] Resize terminal and verify exec view updates
+- [ ] Exit shell (`exit`/Ctrl+D) and verify pane closes
+
 ### Stats Viewing
 
 - [ ] Open stats (`c`)
