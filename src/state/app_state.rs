@@ -673,8 +673,8 @@ impl AppState {
         self.exec_view = Some(ExecViewState {
             container_id,
             container_name,
-            focus: false,
-            status: "Running".to_string(),
+            focus: true,
+            status: "Starting".to_string(),
             screen_lines: vec![],
         });
         // Avoid stacking bottom panels
@@ -896,9 +896,11 @@ mod tests {
         let mut state = AppState::new();
         state.open_exec_view("abc".into(), "web".into());
         assert!(state.exec_view.is_some());
-        assert!(!state.exec_view.as_ref().unwrap().focus);
+        let exec_view = state.exec_view.as_ref().unwrap();
+        assert!(exec_view.focus);
+        assert_eq!(exec_view.status, "Starting");
         state.toggle_exec_focus();
-        assert!(state.exec_view.as_ref().unwrap().focus);
+        assert!(!state.exec_view.as_ref().unwrap().focus);
         state.close_exec_view();
         assert!(state.exec_view.is_none());
     }
