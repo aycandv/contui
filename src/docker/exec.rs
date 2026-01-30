@@ -1,5 +1,33 @@
 //! Exec helper utilities
 
+use std::pin::Pin;
+
+use bollard::container::LogOutput;
+use bollard::exec::{CreateExecOptions, ResizeExecOptions, StartExecOptions, StartExecResults};
+use futures::Stream;
+use futures::StreamExt;
+use tokio::io::AsyncWrite;
+
+use crate::core::{DockerError, Result};
+use crate::docker::DockerClient;
+
+/// Default exec information from container inspect
+#[derive(Debug, Clone)]
+pub struct ExecDefaults {
+    pub container_id: String,
+    pub container_name: String,
+    pub entrypoint: Vec<String>,
+    pub cmd: Vec<String>,
+    pub running: bool,
+}
+
+/// Active exec session handles
+pub struct ExecStart {
+    pub exec_id: String,
+    pub output: Pin<Box<dyn Stream<Item = Result<LogOutput>> + Send>>,
+    pub input: Pin<Box<dyn AsyncWrite + Send>>,
+}
+
 /// Detect whether a command vector looks like a shell invocation.
 pub fn looks_like_shell(cmd: &[String]) -> bool {
     if cmd.is_empty() {
@@ -22,6 +50,108 @@ pub fn select_exec_command(entrypoint: &[String], cmd: &[String]) -> Vec<String>
         out
     } else {
         vec!["/bin/sh".to_string(), "-lc".to_string()]
+    }
+}
+
+impl DockerClient {
+    /// Fetch default exec command information from container inspect
+    pub async fn exec_defaults(&self, id: &str) -> Result<ExecDefaults> {
+        let inspect = self
+            .inner()
+            .inspect_container(id, None)
+            .await
+            .map_err(|e| DockerError::Container(format!("Failed to inspect: {e}")))?;
+
+        let config = inspect.config.unwrap_or_default();
+        let entrypoint = config
+            .entrypoint
+            .unwrap_or_default()
+            .into_iter()
+            .map(Into::into)
+            .collect::<Vec<String>>();
+        let cmd = config
+            .cmd
+            .unwrap_or_default()
+            .into_iter()
+            .map(Into::into)
+            .collect::<Vec<String>>();
+        let name = inspect
+            .name
+            .unwrap_or_default()
+            .trim_start_matches('/')
+            .to_string();
+        let running = inspect.state.and_then(|s| s.running).unwrap_or(false);
+
+        Ok(ExecDefaults {
+            container_id: id.to_string(),
+            container_name: name,
+            entrypoint,
+            cmd,
+            running,
+        })
+    }
+
+    /// Create and start an exec session with TTY enabled
+    pub async fn start_exec_session(
+        &self,
+        container_id: &str,
+        cmd: Vec<String>,
+        cols: u16,
+        rows: u16,
+    ) -> Result<ExecStart> {
+        let create = CreateExecOptions {
+            attach_stdin: Some(true),
+            attach_stdout: Some(true),
+            attach_stderr: Some(true),
+            tty: Some(true),
+            cmd: Some(cmd),
+            ..Default::default()
+        };
+
+        let exec = self
+            .inner()
+            .create_exec(container_id, create)
+            .await
+            .map_err(|e| DockerError::Container(format!("Failed to create exec: {e}")))?;
+
+        let _ = self
+            .inner()
+            .resize_exec(&exec.id, ResizeExecOptions { width: cols, height: rows })
+            .await;
+
+        let started = self
+            .inner()
+            .start_exec(
+                &exec.id,
+                Some(StartExecOptions {
+                    detach: false,
+                    tty: true,
+                    output_capacity: None,
+                }),
+            )
+            .await
+            .map_err(|e| DockerError::Container(format!("Failed to start exec: {e}")))?;
+
+        match started {
+            StartExecResults::Attached { output, input } => Ok(ExecStart {
+                exec_id: exec.id,
+                output: Box::pin(output.map(|item| item.map_err(|e| DockerError::Container(e.to_string()).into()))),
+                input,
+            }),
+            StartExecResults::Detached => Err(DockerError::Container(
+                "Exec detached unexpectedly".to_string(),
+            )
+            .into()),
+        }
+    }
+
+    /// Resize an exec TTY session
+    pub async fn resize_exec_session(&self, exec_id: &str, cols: u16, rows: u16) -> Result<()> {
+        self.inner()
+            .resize_exec(exec_id, ResizeExecOptions { width: cols, height: rows })
+            .await
+            .map_err(|e| DockerError::Container(format!("Failed to resize exec: {e}")))?;
+        Ok(())
     }
 }
 
@@ -49,5 +179,17 @@ mod tests {
     fn detects_shell_by_basename() {
         assert!(looks_like_shell(&["/bin/bash".to_string()]));
         assert!(!looks_like_shell(&["/usr/bin/python".to_string()]));
+    }
+
+    #[test]
+    fn exec_defaults_struct_is_cloneable() {
+        let d = ExecDefaults {
+            container_id: "id".into(),
+            container_name: "name".into(),
+            entrypoint: vec!["/bin/sh".into()],
+            cmd: vec!["-lc".into()],
+            running: true,
+        };
+        let _ = d.clone();
     }
 }
